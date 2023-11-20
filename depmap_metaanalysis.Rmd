@@ -1,0 +1,132 @@
+---
+title: "depmap metaanalysis"
+author: "Sara Horie"
+date: '2023-01-23'
+output: html_document
+editor_options: 
+  chunk_output_type: inline
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(error = FALSE)
+knitr::opts_chunk$set(message = FALSE)
+knitr::opts_chunk$set(warning = FALSE)
+```
+
+```{r library}
+library(tidyverse)
+library(dplyr)
+library(readxl)
+library(knitr)
+library(devtools)
+library(ggpubr)
+library(cowplot)
+library(rstatix)
+library(openxlsx)
+library(data.table)
+library(lubridate)
+library(meta)
+library(metafor)
+library(plotrix)
+```
+
+```{r theme}
+theme_set(theme_cowplot())
+knitr::opts_knit$set(root.dir = rprojroot::find_rstudio_root_file())
+```
+
+```{r}
+dir.create("result/pdf/2_analysis/3_metaanalysis/level1/3groups/result/", recursive = TRUE, showWarnings = FALSE)
+source("../depmap/R/driver_subclassification.R")
+```
+
+https://depmap.org/portal/download/
+22Q2
+
+# 0. data read-in
+```{r}
+df_result_epinum_3groups_final <- read_tsv(paste("result/table/2_analysis/1_ccle_dependency/level1_other/level1_epinum_other_3groups_ALL.txt", sep = ""))
+```
+
+# 1.0 from 2_ccle_dependency_level1_epinum.rmd
+```{r}
+selectcombos <- df_result_epinum_3groups_final %>% 
+  filter(total_cases > 30) %>% 
+  filter(KOdriver_mt_cases > 10) 
+nrow(selectcombos)
+
+df_result_epinum_3groups_final_select <- df_result_epinum_3groups_final %>% 
+  inner_join(selectcombos)
+df_result_epinum_3groups_final_select
+
+print("all combinations for select combos")
+df_3groups_all <- df_result_epinum_3groups_final_select %>% 
+  mutate(level_1 = str_to_title(level_1)) %>% 
+  mutate(name = paste(Hugo_Symbol, level_1, sep = " - ")) %>% 
+  select(name, contains(c("cases", "se", "sd", "mean"))) %>% 
+  as.data.frame()
+```
+
+# 2.0 all genes
+## 2.1 WT change
+```{r}
+pdf(file = str_glue("result/pdf/2_analysis/3_metaanalysis/level1/3groups/result/3groups_wt_change.pdf"),
+    height = 6, width = 15)
+m <- metamean(allwt_cases, mean_allwt, sd_allwt,
+             # label.e = "driver wt",
+             # label.c = "0",
+             fixed = T, random = F,
+             # prediction = TRUE,
+             studlab = name,
+             sm = "MRAW",
+             data = df_3groups_all)
+
+forest(m, layout = "JAMA", xlim = c(-0.8,0.8), at = c(-0.8, -0.6, -0.4, -0.2, 0, 0.2, 0.4, 0.6, 0.8))
+grid::grid.text(paste("3 groups wt change: all genes", sep = ""), .5, .85, gp = grid::gpar(cex = 2))
+dev.off()
+```
+
+## 2.2 KO driver
+```{r}
+pdf(file = str_glue("result/pdf/2_analysis/3_metaanalysis/level1/3groups/result/3groups_KOdriver_mtvswt.pdf"),
+    height = 6, width = 15)
+
+m <- metacont(KOdriver_mt_cases, mean_KOdriver_mt, sd_KOdriver_mt,
+              allwt_cases, mean_allwt, sd_allwt,
+              label.e = "KOdriver mt",
+              label.c = "all wt",
+              fixed = T, random = F,
+              studlab = name,
+              data = df_3groups_all,
+              sm = "MD")
+forest(m, layout = "JAMA", xlim = c(-0.8,0.8), at = c(-0.8, -0.6, -0.4, -0.2, 0, 0.2, 0.4, 0.6, 0.8))
+grid::grid.text(paste("3 groups KOgene mt vs wt: all genes", sep = ""), .5, .85, gp = grid::gpar(cex = 2))
+
+dev.off()
+```
+
+## 2.3 other driver
+```{r}
+pdf(file = str_glue("result/pdf/2_analysis/3_metaanalysis/level1/3groups/result/3groups_otherdriver_mtvswt.pdf"),
+    height = 6, width = 15)
+
+m <- metacont(otherdriver_mt_cases, mean_otherdriver_mt, sd_otherdriver_mt,
+              allwt_cases, mean_allwt, sd_allwt,
+              label.e = "otherdriver mt",
+              label.c = "all wt",
+              fixed = T, random = F,
+              studlab = name,
+              data = df_3groups_all,
+              sm = "MD")
+forest(m, layout = "JAMA", xlim = c(-0.8,0.8), at = c(-0.8, -0.6, -0.4, -0.2, 0, 0.2, 0.4, 0.6, 0.8))
+
+grid::grid.text(paste("3 groups otherdriver mt vs wt: all genes", sep = ""), .5, .85, gp = grid::gpar(cex = 2))
+dev.off()
+```
+
+
+```{r}
+sessionInfo()
+```
+
