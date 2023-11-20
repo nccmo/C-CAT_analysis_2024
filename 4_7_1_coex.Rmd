@@ -1,0 +1,473 @@
+---
+title: "coex"
+author: "Sara Horie"
+date: '2022-08-02'
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+NCC removed all genes
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(error = FALSE)
+knitr::opts_chunk$set(message = FALSE)
+knitr::opts_chunk$set(warning = FALSE)
+Sys.setlocale("LC_ALL", 'Japanese')
+```
+
+```{r library}
+library(tidyverse)
+library(dplyr)
+library(readxl)
+library(knitr)
+library(cowplot)
+library(ggplot2)
+library(ggpubr)
+library(rstatix)
+library(openxlsx)
+library(data.table)
+```
+
+```{r theme}
+theme_set(theme_cowplot())
+knitr::opts_knit$set(root.dir = rprojroot::find_rstudio_root_file())
+knitr::opts_chunk$set(root.dir = rprojroot::find_rstudio_root_file())
+```
+
+```{r}
+dir.create(str_glue("result/2_ccat/table/4_analysis/4_6_coex/final/"), recursive = TRUE, showWarnings = FALSE)
+dir.create(str_glue("result/1_genie/table/4_analysis/4_6_coex/final/"), recursive = TRUE, showWarnings = FALSE)
+dir.create(str_glue("result/3_tcga/table/4_analysis/4_6_coex/final/"), recursive = TRUE, showWarnings = FALSE)
+```
+
+
+```{r source}
+source("R/driver_subclassification.R")
+source("R/col_types.R")
+source("R/final_samples.R")
+```
+
+```{r}
+nrow(df_driver_groupsmall_nolowfreq)
+df_F1_sample <- df_CCAT_sample %>% filter(sample_panel_name == "FoundationOne CDx")
+df_NCC_sample <- df_CCAT_sample %>% filter(sample_panel_name == "NCC OncoPanel")
+```
+
+# 1.0 variables, data
+```{r}
+print("variables")
+df_mutfreq_small <- df_driver_groupsmall_nolowfreq
+
+group_small_var <- unique(df_mutfreq_small$group_small)
+length(group_small_var)
+# 22
+
+df_drivercombos <- data.frame()
+
+for (m in seq_along(group_small_var)) {
+  
+  tmp0 <- df_mutfreq_small %>% 
+    filter(group_small == group_small_var[m])
+  
+  for (i in seq_len(dim(tmp0)[1] - 1)) {
+    for (j in (i + 1):dim(tmp0)[1]) {
+      # i, j は geneのindex
+      
+      df.ij   <- cbind(as.character(tmp0$group_small[i]),
+                       as.character(tmp0$Hugo_Symbol[i]), 
+                       as.character(tmp0$Hugo_Symbol[j]),
+                       as.character(tmp0$coverage[i]),
+                       as.character(tmp0$coverage[j]))
+      
+      df_drivercombos <- rbind(df_drivercombos, df.ij)
+    }
+  }
+}
+
+colnames(df_drivercombos) <- cbind("group_small", "Gene1", "Gene2", "Gene1coverage", "Gene2coverage")
+df_drivercombos <- df_drivercombos %>% 
+  mutate(coverage = if_else(Gene1coverage == "NCCremoved", "NCCremoved",
+                           if_else(Gene2coverage == "NCCremoved", "NCCremoved",
+                                  "all")))
+```
+
+# 2.0 C-CAT matrix
+## 2.1 NCC removed and all combined
+```{r}
+# making p-value matrix ----------------------------------------------------------
+df_ExCo_combined <- data.frame()  ##data.frame for calculating P value
+
+for (m in seq_len(nrow(df_drivercombos))) {
+  
+  tmp_cancer <- df_drivercombos$group_small[m]
+  tmp_Gene1 <- df_drivercombos$Gene1[m]
+  tmp_Gene2 <- df_drivercombos$Gene2[m]
+  
+  
+  if (df_drivercombos$coverage[m] == "all") {
+    tmp_sample <- df_CCAT_sample
+    tmp_mut <- df_CCAT_mut
+  }
+  
+  if (df_drivercombos$coverage[m] == "NCCremoved") {
+    tmp_sample <- df_F1_sample
+    tmp_mut <- df_F1_mut
+  }
+  
+  tmp <- tmp_mut %>% 
+    filter(group_small == tmp_cancer)
+  
+  sample_num <- tmp_sample %>% 
+    filter(group_small == tmp_cancer)
+  
+  Case.i <- unique(tmp$hashID[tmp$Hugo_Symbol == tmp_Gene1], na.rm = TRUE)
+  Case.j <- unique(tmp$hashID[tmp$Hugo_Symbol == tmp_Gene2], na.rm = TRUE)
+  No_Total_Cases <- sample_num$hashID
+  
+  Case.common <- intersect(Case.i, Case.j)
+  Num_common  <- length(Case.common)
+  Num_i       <- length(Case.i) - length(Case.common)
+  Num_j       <- length(Case.j) - length(Case.common)
+  Num_no      <- length(No_Total_Cases) - length(Case.i) - length(Case.j) + length(Case.common)
+  
+  freq.i <- length(Case.i)/length(No_Total_Cases)
+  freq.j <- length(Case.j)/length(No_Total_Cases)
+  
+  Mat.i <- matrix(c(Num_common, Num_i, Num_j, Num_no), byrow = TRUE, ncol = 2)
+  Fisher.ij <- fisher.test(Mat.i)
+  
+  Num_common <- replace(Num_common, Num_common == 0, 0.01)
+  Num_i <- replace(Num_i, Num_i == 0, 0.01)
+  Num_j <- replace(Num_j, Num_j == 0, 0.01)
+  Num_no <- replace(Num_no, Num_no == 0, 0.01)
+  
+  estimate.edit <- (Num_common/Num_i)/(Num_j/Num_no)
+  
+  ExCo_tmp   <- cbind(as.character(tmp_Gene1), 
+                      as.character(tmp_Gene2), 
+                      as.character(df_drivercombos$coverage[m]),
+                      as.numeric(Fisher.ij$estimate), 
+                      as.numeric(estimate.edit),
+                      as.numeric(Fisher.ij$p.value), 
+                      as.character(tmp_cancer), 
+                      as.numeric(Num_common), 
+                      as.numeric(Num_i), 
+                      as.numeric(Num_j), 
+                      as.numeric(Num_no),
+                      as.numeric(freq.i),
+                      as.numeric(freq.j),
+                      as.numeric(length(No_Total_Cases)))
+  
+  df_ExCo_combined <- rbind(df_ExCo_combined, ExCo_tmp)
+  
+}
+  
+colnames(df_ExCo_combined) <- cbind("Gene1", "Gene2", "coverage", "estimate", "estimate.edit", "p.value", "group_small", 
+                                     "common", "onlyGene1", "onlyGene2", "neitherGene", 
+                                     "freqGene1", "freqGene2", "total")
+
+df_ExCo_combined$Gene1 <- as.character(df_ExCo_combined$Gene1)
+df_ExCo_combined$Gene2 <- as.character(df_ExCo_combined$Gene2)
+df_ExCo_combined$coverage <- as.character(df_ExCo_combined$coverage)
+df_ExCo_combined$common <- as.numeric(df_ExCo_combined$common)
+df_ExCo_combined$onlyGene1 <- as.numeric(df_ExCo_combined$onlyGene1)
+df_ExCo_combined$onlyGene2 <- as.numeric(df_ExCo_combined$onlyGene2)
+df_ExCo_combined$freqGene1 <- as.numeric(df_ExCo_combined$freqGene1)
+df_ExCo_combined$freqGene2 <- as.numeric(df_ExCo_combined$freqGene2)
+df_ExCo_combined$estimate <- as.numeric(as.character(df_ExCo_combined$estimate))
+df_ExCo_combined$estimate.edit <- as.numeric(df_ExCo_combined$estimate.edit)
+df_ExCo_combined$p.value <- as.numeric(df_ExCo_combined$p.value)
+df_ExCo_combined$group_small <- as.character(df_ExCo_combined$group_small)
+df_ExCo_combined$adj.p.value <- as.numeric(p.adjust(df_ExCo_combined$p.value, method = "BH"))
+
+df_ExCo_combined %>% 
+  write_tsv(str_glue("result/2_ccat/table/4_analysis/4_6_coex/final/matrix_coex_CCAT_nccremoved.tsv"))
+```
+
+# 4.0 GENIE
+```{r}
+# making p-value matrix ----------------------------------------------------------
+dat_ExCo_Genie <- data.frame()  ##data.frame for calculating P value
+
+for (m in seq_along(group_small_var)) {
+
+  tmp0 <- df_mutfreq_small %>% 
+    filter(group_small == group_small_var[m])
+  
+  #patient data
+  tmp <- df_mutations_GENIE_nohyper_groups %>% 
+    filter(group_small == group_small_var[m])
+
+  sample_num <- df_GENIE_sample %>% 
+    filter(group_small == group_small_var[m]) 
+  
+  dat_ExCo_cancer <- data.frame()
+  
+  for (i in seq_len(dim(tmp0)[1] - 1)) {
+    for (j in (i + 1):dim(tmp0)[1]) {
+      
+      Case.i <- unique(tmp$Tumor_Sample_Barcode[tmp$Hugo_Symbol == as.character(tmp0$Hugo_Symbol[i])], na.rm = TRUE)
+      Case.j <- unique(tmp$Tumor_Sample_Barcode[tmp$Hugo_Symbol == as.character(tmp0$Hugo_Symbol[j])], na.rm = TRUE)
+      No_Total_Cases <- sample_num$Tumor_Sample_Barcode
+      
+      Case.common <- intersect(Case.i, Case.j)
+      Num_common  <- length(Case.common)
+      Num_i       <- length(Case.i) - length(Case.common)
+      Num_j       <- length(Case.j) - length(Case.common)
+      Num_no      <- length(No_Total_Cases) - length(Case.i) - length(Case.j) + length(Case.common)
+      
+      freq.i <- length(Case.i)/length(No_Total_Cases)
+      freq.j <- length(Case.j)/length(No_Total_Cases)
+      
+      Mat.i <- matrix(c(Num_common, Num_i, Num_j, Num_no), byrow = TRUE, ncol = 2)
+      Fisher.ij <- fisher.test(Mat.i)
+      
+      Num_common <- replace(Num_common, Num_common == 0, 0.01)
+      Num_i <- replace(Num_i, Num_i == 0, 0.01)
+      Num_j <- replace(Num_j, Num_j == 0, 0.01)
+      Num_no <- replace(Num_no, Num_no == 0, 0.01)
+      estimate.edit <- (Num_common/Num_i)/(Num_j/Num_no)
+      
+      ExCo.ij   <- cbind(as.character(tmp0$Hugo_Symbol[i]), 
+                         as.character(tmp0$Hugo_Symbol[j]), 
+                         as.numeric(Fisher.ij$estimate), 
+                         as.numeric(estimate.edit),
+                         as.numeric(Fisher.ij$p.value), 
+                         as.character(group_small_var[m]), 
+                         as.numeric(Num_common), 
+                         as.numeric(Num_i), 
+                         as.numeric(Num_j), 
+                         as.numeric(Num_no),
+                         as.numeric(freq.i),
+                         as.numeric(freq.j),
+                         as.numeric(length(No_Total_Cases)))
+      
+     dat_ExCo_cancer <- rbind(dat_ExCo_cancer, ExCo.ij)
+    }
+  }
+  colnames(dat_ExCo_cancer) <- cbind("Gene1", "Gene2", "estimate", "estimate.edit", "p.value", "group_small", 
+                                     "common", "onlyGene1", "onlyGene2", "neitherGene", 
+                                     "freqGene1", "freqGene2", "total")
+  dat_ExCo_Genie <- rbind(dat_ExCo_Genie, dat_ExCo_cancer)
+  
+}
+
+dat_ExCo_Genie$Gene1 <- as.character(dat_ExCo_Genie$Gene1)
+dat_ExCo_Genie$Gene2 <- as.character(dat_ExCo_Genie$Gene2)
+dat_ExCo_Genie$common <- as.numeric(dat_ExCo_Genie$common)
+dat_ExCo_Genie$onlyGene1 <- as.numeric(dat_ExCo_Genie$onlyGene1)
+dat_ExCo_Genie$onlyGene2 <- as.numeric(dat_ExCo_Genie$onlyGene2)
+dat_ExCo_Genie$freqGene1 <- as.numeric(dat_ExCo_Genie$freqGene1)
+dat_ExCo_Genie$freqGene2 <- as.numeric(dat_ExCo_Genie$freqGene2)
+dat_ExCo_Genie$estimate <- as.numeric(as.character(dat_ExCo_Genie$estimate))
+dat_ExCo_Genie$estimate.edit <- as.numeric(dat_ExCo_Genie$estimate.edit)
+dat_ExCo_Genie$adj.p.value <- as.numeric(p.adjust(dat_ExCo_Genie$p.value, method = "BH")) # by all pvalues
+dat_ExCo_Genie$p.value <- as.numeric(dat_ExCo_Genie$p.value)
+dat_ExCo_Genie$group_small <- as.character(dat_ExCo_Genie$group_small)
+
+dat_ExCo_Genie %>% 
+  write_tsv(str_glue("result/1_genie/table/4_analysis/4_6_coex/final/matrix_coex_genie_withfreq.tsv"))
+```
+
+# 6.0 TCGA
+```{r}
+df_ExCo_TCGA <- data.frame()  ##data.frame for calculating P value
+
+for (m in seq_along(group_small_var)) {
+  
+  #drivers
+  tmp0 <- df_mutfreq_small %>% 
+    filter(group_small == group_small_var[m])
+  
+  #patient data
+  tmp <- df_mutations_TCGA_nohyper_groups %>% 
+    filter(group_small == group_small_var[m])
+  
+  tmp_sample_num <- tcga_sample_nohyper_groups %>% 
+    filter(group_small == group_small_var[m]) 
+  
+  dat_ExCo_cancer <- data.frame()
+  # i <- 1
+  for (i in seq_len(dim(tmp0)[1] - 1)) {
+    for (j in (i + 1):dim(tmp0)[1]) {
+      # i, j は geneのindex
+      # i <- 7
+      # j <- 8
+      Case.i <- unique(tmp$Tumor_Sample_Barcode[tmp$Hugo_Symbol == as.character(tmp0$Hugo_Symbol[i])], na.rm = TRUE)
+      Case.j <- unique(tmp$Tumor_Sample_Barcode[tmp$Hugo_Symbol == as.character(tmp0$Hugo_Symbol[j])], na.rm = TRUE)
+      No_Total_Cases <- tmp_sample_num$Tumor_Sample_Barcode
+      
+      Case.common <- intersect(Case.i, Case.j)
+      Num_common  <- length(Case.common)
+      Num_i       <- length(Case.i) - length(Case.common)
+      Num_j       <- length(Case.j) - length(Case.common)
+      Num_no      <- length(No_Total_Cases) - length(Case.i) - length(Case.j) + length(Case.common)
+      
+      freq.i <- length(Case.i)/length(No_Total_Cases)
+      freq.j <- length(Case.j)/length(No_Total_Cases)
+      
+      Mat.i <- matrix(c(Num_common, Num_i, Num_j, Num_no), byrow = TRUE, ncol = 2)
+      Fisher.ij <- fisher.test(Mat.i)
+      
+      Num_common <- replace(Num_common, Num_common == 0, 0.01)
+      Num_i <- replace(Num_i, Num_i == 0, 0.01)
+      Num_j <- replace(Num_j, Num_j == 0, 0.01)
+      Num_no <- replace(Num_no, Num_no == 0, 0.01)
+      estimate.edit <- (Num_common/Num_i)/(Num_j/Num_no)
+      
+      ExCo.ij   <- cbind(as.character(tmp0$Hugo_Symbol[i]), 
+                         as.character(tmp0$Hugo_Symbol[j]), 
+                         as.numeric(Fisher.ij$estimate), 
+                         as.numeric(estimate.edit),
+                         as.numeric(Fisher.ij$p.value), 
+                         as.character(group_small_var[m]), 
+                         as.numeric(Num_common), 
+                         as.numeric(Num_i), 
+                         as.numeric(Num_j), 
+                         as.numeric(Num_no),
+                         as.numeric(freq.i),
+                         as.numeric(freq.j),
+                         as.numeric(length(No_Total_Cases)))
+      
+     dat_ExCo_cancer <- rbind(dat_ExCo_cancer, ExCo.ij)
+     # df_ExCo_TCGA_ <- rbind(df_ExCo_TCGA, dat_ExCo_cancer)
+    }
+  }
+  colnames(dat_ExCo_cancer) <- cbind("Gene1", "Gene2", "estimate", "estimate.edit", "p.value", "group_small", 
+                                     "common", "onlyGene1", "onlyGene2", "neitherGene", 
+                                     "freqGene1", "freqGene2", "total")
+  df_ExCo_TCGA <- rbind(df_ExCo_TCGA, dat_ExCo_cancer)
+}
+
+df_ExCo_TCGA$Gene1 <- as.character(df_ExCo_TCGA$Gene1)
+df_ExCo_TCGA$Gene2 <- as.character(df_ExCo_TCGA$Gene2)
+df_ExCo_TCGA$common <- as.numeric(df_ExCo_TCGA$common)
+df_ExCo_TCGA$onlyGene1 <- as.numeric(df_ExCo_TCGA$onlyGene1)
+df_ExCo_TCGA$onlyGene2 <- as.numeric(df_ExCo_TCGA$onlyGene2)
+df_ExCo_TCGA$freqGene1 <- as.numeric(df_ExCo_TCGA$freqGene1)
+df_ExCo_TCGA$freqGene2 <- as.numeric(df_ExCo_TCGA$freqGene2)
+df_ExCo_TCGA$estimate <- as.numeric(as.character(df_ExCo_TCGA$estimate))
+df_ExCo_TCGA$estimate.edit <- as.numeric(df_ExCo_TCGA$estimate.edit)
+df_ExCo_TCGA$adj.p.value <- as.numeric(p.adjust(df_ExCo_TCGA$p.value, method = "BH")) # by all pvalues
+df_ExCo_TCGA$p.value <- as.numeric(df_ExCo_TCGA$p.value)
+df_ExCo_TCGA$group_small <- as.character(df_ExCo_TCGA$group_small)
+
+df_ExCo_TCGA %>% 
+  write_tsv(str_glue("result/3_tcga/table/4_analysis/4_6_coex/final/matrix_coex_tcga.tsv"))
+```
+
+
+# 7.0 comparison
+```{r}
+for (z in seq_len(nrow(df_ExCo_combined))) {
+  # z <- 3
+  if (df_ExCo_combined$estimate.edit[z] < 1) {
+    df_ExCo_combined$OR[z] <- -(1/df_ExCo_combined$estimate.edit[z]) #negative
+  } else {
+    df_ExCo_combined$OR[z] <- df_ExCo_combined$estimate.edit[z]
+  }
+}
+
+for (z in seq_len(nrow(dat_ExCo_Genie))) {
+  # z <- 2
+  if (dat_ExCo_Genie$estimate.edit[z] < 1) {
+    dat_ExCo_Genie$OR[z] <- -(1/dat_ExCo_Genie$estimate.edit[z]) #negative
+  } else {
+    dat_ExCo_Genie$OR[z] <- dat_ExCo_Genie$estimate.edit[z]
+  }
+}
+
+for (z in seq_len(nrow(df_ExCo_TCGA))) {
+  # z <- 2
+  if (df_ExCo_TCGA$estimate.edit[z] < 1) {
+    df_ExCo_TCGA$OR[z] <- -(1/df_ExCo_TCGA$estimate.edit[z]) #negative
+  } else {
+    df_ExCo_TCGA$OR[z] <- df_ExCo_TCGA$estimate.edit[z]
+  }
+}
+
+df_ExCo_combined$OR <- as.numeric(df_ExCo_combined$OR)
+dat_ExCo_Genie$OR <- as.numeric(dat_ExCo_Genie$OR)
+df_ExCo_TCGA$OR <- as.numeric(df_ExCo_TCGA$OR)
+
+nrow(df_ExCo_combined)
+nrow(dat_ExCo_Genie)
+nrow(df_ExCo_TCGA)
+
+df_ExCo_combined <- df_ExCo_combined %>% 
+  mutate(logOR = log(estimate.edit))
+
+dat_ExCo_CCAT <- df_ExCo_combined %>% 
+  dplyr::rename(CCAT_estimate = estimate,
+                CCAT_estimate.edit = estimate.edit,
+                CCAT_p.value = p.value,
+                CCAT_adj.p.value = adj.p.value,
+                CCAT_OR = OR,
+                CCAT_freqGene1 = freqGene1,
+                CCAT_freqGene2 = freqGene2,
+                CCAT_logOR = logOR,
+                CCAT_common = common,
+                CCAT_onlyGene1 = onlyGene1,
+                CCAT_onlyGene2 = onlyGene2,
+                CCAT_neitherGene = neitherGene,
+                CCAT_total = total)
+
+dat_ExCo_Genie <- dat_ExCo_Genie %>% 
+  mutate(logOR = log(estimate.edit))
+
+dat_ExCo_GENIE_forjoin <- dat_ExCo_Genie %>% 
+  dplyr::rename(
+    GENIE_estimate = estimate,
+    GENIE_estimate.edit = estimate.edit,
+    GENIE_p.value = p.value,
+    GENIE_adj.p.value = adj.p.value,
+    GENIE_OR = OR,
+    GENIE_freqGene1 = freqGene1,
+    GENIE_freqGene2 = freqGene2,
+    GENIE_logOR = logOR,
+    GENIE_common = common,
+    GENIE_onlyGene1 = onlyGene1,
+    GENIE_onlyGene2 = onlyGene2,
+    GENIE_neitherGene = neitherGene,
+    GENIE_total = total) 
+
+df_ExCo_TCGA <- df_ExCo_TCGA %>% 
+  mutate(logOR = log(estimate.edit))
+
+dat_ExCo_TCGA_forjoin <- df_ExCo_TCGA %>% 
+  dplyr::rename(
+    TCGA_estimate = estimate,
+    TCGA_estimate.edit = estimate.edit,
+    TCGA_p.value = p.value,
+    TCGA_adj.p.value = adj.p.value,
+    TCGA_OR = OR,
+    TCGA_freqGene1 = freqGene1,
+    TCGA_freqGene2 = freqGene2,
+    TCGA_logOR = logOR,
+    TCGA_common = common,
+    TCGA_onlyGene1 = onlyGene1,
+    TCGA_onlyGene2 = onlyGene2,
+    TCGA_neitherGene = neitherGene,
+    TCGA_total = total) 
+
+ExCo_CCAT_GENIE_TCGA <- dat_ExCo_CCAT  %>% 
+  left_join(dat_ExCo_GENIE_forjoin, by = c("Gene1", "Gene2", "group_small")) %>% 
+  left_join(dat_ExCo_TCGA_forjoin, by = c("Gene1", "Gene2", "group_small")) %>% 
+  select(Gene1, Gene2, group_small, CCAT_estimate, CCAT_estimate.edit, CCAT_p.value, CCAT_adj.p.value, CCAT_OR, CCAT_logOR, CCAT_common, CCAT_onlyGene1, CCAT_onlyGene2, CCAT_neitherGene, CCAT_freqGene1, CCAT_freqGene2, CCAT_total, 
+         GENIE_estimate, GENIE_estimate.edit, GENIE_p.value, GENIE_adj.p.value, GENIE_OR, GENIE_logOR, GENIE_common, GENIE_onlyGene1, GENIE_onlyGene2, GENIE_neitherGene, 
+         GENIE_freqGene1, GENIE_freqGene2, GENIE_neitherGene, GENIE_total, 
+         TCGA_estimate, TCGA_estimate.edit, TCGA_p.value, TCGA_adj.p.value, TCGA_OR, TCGA_logOR, TCGA_common, TCGA_onlyGene1, TCGA_onlyGene2, TCGA_neitherGene, 
+         TCGA_freqGene1, TCGA_freqGene2, TCGA_neitherGene, TCGA_total,
+         everything()) %>% 
+  mutate(comparison = ifelse(is.na(TCGA_OR), NA, 
+                             ifelse(GENIE_OR > 1 & CCAT_OR > 1 & TCGA_OR > 1 | GENIE_OR < 0 & CCAT_OR < 0 & TCGA_OR < 0, "all_same", "conflicting")))
+
+ExCo_CCAT_GENIE_TCGA %>%
+  write_tsv(str_glue("result/2_ccat/table/4_analysis/4_6_coex/final/ccat_genie_TCGA_OR_all.tsv"))
+```
+
+```{r}
+sessionInfo()
+```
+
