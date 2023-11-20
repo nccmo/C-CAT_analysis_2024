@@ -1,0 +1,171 @@
+---
+title: "meta-analysis"
+author: "Sara Horie"
+date: '2022-10-22'
+output: html_document
+editor_options: 
+  chunk_output_type: inline
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(error = FALSE)
+knitr::opts_chunk$set(message = FALSE)
+knitr::opts_chunk$set(warning = FALSE)
+```
+
+```{r library}
+library(tidyverse)
+library(dplyr)
+library(epitools)
+library(meta)
+library(readxl)
+library(cowplot)
+```
+
+```{r theme}
+theme_set(theme_cowplot())
+knitr::opts_knit$set(root.dir = rprojroot::find_rstudio_root_file())
+knitr::opts_chunk$set(root.dir = rprojroot::find_rstudio_root_file())
+```
+
+```{r}
+dir.create(str_glue("result/2_ccat/table/4_analysis/4_7_meta_analysis/result/"), recursive = TRUE, showWarnings = FALSE)
+```
+
+```{r}
+source("R/driver_subclassification.R")
+```
+
+# 1.0 readin
+```{r}
+df_ExCo_CCAT_GENIE_TCGA_all <- read_tsv(str_glue("result/2_ccat/table/4_analysis/4_6_coex/ccat_genie_TCGA_OR_all.tsv"))
+nrow(df_ExCo_CCAT_GENIE_TCGA_all)
+
+print("number of unique genes")
+print(length(unique(c(df_ExCo_CCAT_GENIE_TCGA_all$Gene1, df_ExCo_CCAT_GENIE_TCGA_all$Gene2))))
+```
+# 2.0 Metaanalysis all data 
+```{r}
+tmp_driver_1 <- df_driver_withpancan_nccremoved %>% 
+  dplyr::rename(Gene1 = Hugo_Symbol) %>% 
+  mutate(Gene1driver = "driver") %>% 
+  select(Gene1, Gene1driver, group_small)
+tmp_driver_2 <- df_driver_withpancan_nccremoved %>% 
+  dplyr::rename(Gene2 = Hugo_Symbol) %>% 
+  mutate(Gene2driver = "driver") %>% 
+  select(Gene2, Gene2driver, group_small)
+
+df_ExCo_nohyper_all <- df_ExCo_CCAT_GENIE_TCGA_all %>%
+  left_join(tmp_driver_1) %>% 
+  left_join(tmp_driver_2) %>% 
+  filter(Gene1driver == "driver") %>% 
+  filter(Gene2driver == "driver") 
+nrow(df_ExCo_nohyper_all)
+stopifnot(nrow(df_ExCo_CCAT_GENIE_TCGA_all) == nrow(df_ExCo_nohyper_all))
+
+for (i in seq_len(nrow(df_ExCo_nohyper_all))) {
+  
+  mat_CCAT <- matrix(c(as.numeric(df_ExCo_nohyper_all[i, "CCAT_common"]), 
+                    as.numeric(df_ExCo_nohyper_all[i, "CCAT_onlyGene1"]), 
+                    as.numeric(df_ExCo_nohyper_all[i, "CCAT_onlyGene2"]), 
+                    as.numeric(df_ExCo_nohyper_all[i, "CCAT_neitherGene"])), 
+                  ncol = 2, 
+                  byrow = TRUE)
+  df_ExCo_nohyper_all[i, "CCAT_OR_w"] <- oddsratio.wald(mat_CCAT)$measure["Exposed2", "estimate"]
+  df_ExCo_nohyper_all[i, "CCAT_upper"] <- oddsratio.wald(mat_CCAT)$measure["Exposed2", "upper"]
+  df_ExCo_nohyper_all[i, "CCAT_lower"] <- oddsratio.wald(mat_CCAT)$measure["Exposed2", "lower"]
+  
+  mat_GENIE <- matrix(c(as.numeric(df_ExCo_nohyper_all[i, "GENIE_common"]), 
+                    as.numeric(df_ExCo_nohyper_all[i, "GENIE_onlyGene1"]), 
+                    as.numeric(df_ExCo_nohyper_all[i, "GENIE_onlyGene2"]), 
+                    as.numeric(df_ExCo_nohyper_all[i, "GENIE_neitherGene"])), 
+                  ncol = 2, 
+                  byrow = TRUE)
+  df_ExCo_nohyper_all[i, "GENIE_OR_w"] <- oddsratio.wald(mat_GENIE)$measure["Exposed2", "estimate"]
+  df_ExCo_nohyper_all[i, "GENIE_upper"] <- oddsratio.wald(mat_GENIE)$measure["Exposed2", "upper"]
+  df_ExCo_nohyper_all[i, "GENIE_lower"] <- oddsratio.wald(mat_GENIE)$measure["Exposed2", "lower"]
+  
+  mat_TCGA <- matrix(c(as.numeric(df_ExCo_nohyper_all[i, "TCGA_common"]), 
+                    as.numeric(df_ExCo_nohyper_all[i, "TCGA_onlyGene1"]), 
+                    as.numeric(df_ExCo_nohyper_all[i, "TCGA_onlyGene2"]), 
+                    as.numeric(df_ExCo_nohyper_all[i, "TCGA_neitherGene"])), 
+                  ncol = 2, 
+                  byrow = TRUE)
+  df_ExCo_nohyper_all[i, "TCGA_OR_w"] <- oddsratio.wald(mat_TCGA)$measure["Exposed2", "estimate"]
+  df_ExCo_nohyper_all[i, "TCGA_upper"] <- oddsratio.wald(mat_TCGA)$measure["Exposed2", "upper"]
+  df_ExCo_nohyper_all[i, "TCGA_lower"] <- oddsratio.wald(mat_TCGA)$measure["Exposed2", "lower"]
+  
+}
+  
+df_ExCo_nohyper_all %>% 
+  write_tsv(str_glue("result/2_ccat/table/4_analysis/4_7_meta_analysis/result/ccat_genie_tcga_meta_nccremoved_pancan.txt"))
+
+df_ExCo_nohyper_all %>% filter(GENIE_p.value < 0.05) %>% nrow()
+df_ExCo_nohyper_all %>% filter(CCAT_p.value < 0.05) %>% nrow()
+df_ExCo_nohyper_all %>% filter(TCGA_p.value < 0.05) %>% nrow()
+df_ExCo_nohyper_all %>% nrow()
+```
+
+# 3.0 Forest plot
+## 3.1 all 
+```{r}
+df_meta_allcombos <- df_ExCo_nohyper_all
+
+for (i in seq_len(nrow(df_meta_allcombos))) {
+  
+  cancer <- df_meta_allcombos[i, "group_small"]
+  gene1 <- df_meta_allcombos[i, "Gene1"]
+  gene2 <- df_meta_allcombos[i, "Gene2"]
+  
+  output_df <- tibble(cohort = c("CCAT", "GENIE", "TCGA"),
+                      OR = unlist(c(log(df_meta_allcombos[i, "CCAT_OR_w"]), 
+                                    log(df_meta_allcombos[i, "GENIE_OR_w"]),
+                                    log(df_meta_allcombos[i, "TCGA_OR_w"]))),
+                      seOR = unlist(c((log(df_meta_allcombos[i, "CCAT_OR_w"]) - log(df_meta_allcombos[i, "CCAT_lower"]))/1.96,
+                                      (log(df_meta_allcombos[i, "GENIE_OR_w"]) - log(df_meta_allcombos[i, "GENIE_lower"]))/1.96,
+                                      (log(df_meta_allcombos[i, "TCGA_OR_w"]) - log(df_meta_allcombos[i, "TCGA_lower"]))/1.96))
+  )
+  
+  meta_res <- metagen(OR, seOR,
+                      studlab = cohort,
+                      data = output_df,
+                      fixed = TRUE,
+                      random = FALSE,
+                      # prediction = TRUE,
+                      sm = "OR"
+  )
+  
+  df_meta_allcombos[i, "Pval_fixed"] <- meta_res$pval.fixed
+  df_meta_allcombos[i, "fixed_OR"] <- exp(meta_res$TE.fixed)
+  df_meta_allcombos[i, "fixed_lower"] <- exp(meta_res$lower.fixed)
+  df_meta_allcombos[i, "fixed_upper"] <- exp(meta_res$upper.fixed)
+  df_meta_allcombos[i, "Pval_Q"] <- meta_res$pval.Q
+  
+  df_meta_allcombos[i, "CCAT_weight"] <- weights(meta_res)["CCAT","p.common"]
+  df_meta_allcombos[i, "GENIE_weight"] <- weights(meta_res)["GENIE","p.common"]
+  df_meta_allcombos[i, "TCGA_weight"] <- weights(meta_res)["TCGA","p.common"]
+  
+}
+
+nrow(df_meta_allcombos)
+df_meta_allcombos$Qval_fixed <- p.adjust(df_meta_allcombos$Pval_fixed, "BH")
+
+df_meta_allcombos <- df_meta_allcombos %>% 
+  select(colnames(df_meta_allcombos[, 1:52]), 
+         Pval_fixed, Qval_fixed, fixed_OR, fixed_lower, fixed_upper, 
+         everything())
+
+df_meta_allcombos %>% 
+  write_tsv(str_glue("result/2_ccat/table/4_analysis/4_7_meta_analysis/result/ccat_genie_tcga_meta_nccremoved.txt"))
+
+df_meta_allcombos %>% 
+  filter(Qval_fixed < 0.05) %>% 
+  nrow()
+```
+
+```{r}
+sessionInfo()
+```
+
+
