@@ -1,0 +1,217 @@
+---
+title: "2_tcga_mutfile"
+author: "Sara Horie"
+date: "2023-03-20"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(error = FALSE)
+knitr::opts_chunk$set(message = FALSE)
+knitr::opts_chunk$set(warning = FALSE)
+```
+
+```{r library}
+library(tidyverse)
+library(dplyr)
+library(readxl)
+library(RColorBrewer)
+library(viridis)
+library(knitr)
+library(cowplot)
+library(ggplot2)
+library(devtools)
+library(ggpubr)
+library(rstatix)
+library(ggrepel)
+library(openxlsx)
+library(data.table)
+library(ggsci)
+library(readxl)
+library(ggsci)
+```
+
+```{r theme}
+theme_set(theme_cowplot())
+knitr::opts_knit$set(root.dir = rprojroot::find_rstudio_root_file())
+dir.create("result/3_tcga/table/1_dataprep/1_sample_sheet/2_annotationfile/", recursive = TRUE, showWarnings = FALSE)
+dir.create("result/3_tcga/table/1_dataprep/2_mutation_sheet/2_annotationfile/", recursive = TRUE, showWarnings = FALSE)
+```
+
+mut file from https://gdc.cancer.gov/about-data/publications/pancanatlas
+mc3.v0.2.8.PUBLIC.maf.gz
+
+
+# 1.0 TCGA readin
+## 1.1 tcga public
+```{r}
+# read in TCGA data
+df_tcga_public <- read_tsv("../../data/tcga/mc3.v0.2.8.PUBLIC.maf")
+
+df_tcga_public %>% 
+  filter(str_detect(Tumor_Seq_Allele2, "N") | is.na(Tumor_Seq_Allele2))
+```
+
+## 1.2 sample from 1_tcga_sample
+```{r}
+# read in sample sheet from 1_tcga_sample
+tcga_sample_df_groupsmall <- read_tsv("result/3_tcga/table/1_dataprep/1_sample_sheet/1_dataprep/tcga_samplesheet.txt")
+```
+
+```{r}
+# select columns
+colnames(df_tcga_public)
+nrow(df_tcga_public)
+
+TCGA_mut_file <- df_tcga_public %>% 
+  select(Hugo_Symbol, HGVSp_Short, Chromosome, Start_Position, End_Position, Reference_Allele, Tumor_Seq_Allele2,  Tumor_Sample_Barcode, Matched_Norm_Sample_Barcode, t_depth, t_ref_count, t_alt_count) %>% 
+  mutate(Patient_Barcode_normal = str_extract(Matched_Norm_Sample_Barcode, "TCGA-[0-9A-Za-z]+-[0-9A-Za-z]+")) %>%
+  mutate(Tumor_Sample_ID_normal = str_extract(Matched_Norm_Sample_Barcode, "TCGA-[0-9A-Za-z]+-[0-9A-Za-z]+-[0-9]+")) %>%
+  mutate(Tumor_Lysate_ID_normal = str_extract(Matched_Norm_Sample_Barcode, "TCGA-[0-9A-Za-z]+-[0-9A-Za-z]+-[0-9A-Z2]+-[0-9]+")) %>% 
+  mutate(sample_num_normal = as.numeric(str_sub(Tumor_Sample_ID_normal, nchar(Tumor_Sample_ID_normal) - 1, nchar(Tumor_Sample_ID_normal))))
+
+X0 <- nrow(TCGA_mut_file)
+X0
+
+print("choose one normal pair. if there are two (10,11), pick 10")
+distinct_tum_normal_pairs <- TCGA_mut_file %>% 
+  distinct(Tumor_Sample_Barcode, Matched_Norm_Sample_Barcode, sample_num_normal) %>% 
+  arrange(Tumor_Sample_Barcode, sample_num_normal) %>% 
+  group_by(Tumor_Sample_Barcode) %>% 
+  mutate(row_num = row_number()) %>% 
+  filter(row_num == 1) 
+
+#check samples with two normal samples
+TCGA_mut_file %>% 
+  distinct(Tumor_Sample_Barcode, Matched_Norm_Sample_Barcode, sample_num_normal) %>% 
+  arrange(Tumor_Sample_Barcode, sample_num_normal) %>% 
+  group_by(Tumor_Sample_Barcode) %>% 
+  mutate(row_num = row_number()) %>% 
+  filter(n() > 1) 
+
+TCGA_mut_file %>% 
+  distinct(Tumor_Sample_Barcode, Matched_Norm_Sample_Barcode, sample_num_normal) %>% 
+  arrange(Tumor_Sample_Barcode, sample_num_normal) %>% 
+  group_by(Tumor_Sample_Barcode) %>% 
+  mutate(row_num = row_number()) %>% 
+  filter(n() > 1) %>% 
+  summarise(sample_number = paste(sample_num_normal, collapse = ";")) %>% 
+  distinct(sample_number)
+# samples that have multiple normal samples are 10:11 combinations. use 10
+
+distinct_samples <- distinct_tum_normal_pairs %>% 
+  select(Tumor_Sample_Barcode, Matched_Norm_Sample_Barcode) %>% 
+  ungroup()
+
+stopifnot(nrow(distinct_samples) == length(unique(TCGA_mut_file$Tumor_Sample_Barcode)))
+```
+
+# 2.0 keep pairs for only one normal sample
+```{r}
+# filtered mutations to include those paired with one normal sample
+TCGA_mut_file_distinct <- TCGA_mut_file %>% 
+  left_join(distinct_samples %>% mutate(distinct = TRUE)) %>% 
+  filter(distinct)
+
+length(unique(TCGA_mut_file_distinct$Tumor_Sample_Barcode)) # no removed samples
+TCGA_mut_file_distinct %>% 
+  distinct(Tumor_Sample_Barcode, Matched_Norm_Sample_Barcode) %>% 
+  group_by(Tumor_Sample_Barcode, Matched_Norm_Sample_Barcode) %>% 
+  filter(n() > 1)
+# 0 no samples with 2 normal samples
+
+nrow(TCGA_mut_file)
+X1 <- nrow(TCGA_mut_file_distinct)
+print(X0)
+X0 - X1
+
+print("start mutation number")
+print(X1)
+```
+
+# 3.0 remove samples not in sample file
+```{r}
+TCGA_mut_file_2 <- TCGA_mut_file_distinct %>%
+  left_join(tcga_sample_df_groupsmall) %>% 
+  filter(!is.na(`cancer type`)) %>% 
+  select(-`cancer type`)
+
+X2 <- nrow(TCGA_mut_file_2)
+X2
+
+print("Duplicated samples are removed")
+print("Number of removed mutations")
+print(X1 - X2)
+```
+# 4.0 removed NAs and "N"
+```{r}
+TCGA_mut_file_3 <- TCGA_mut_file_2 %>% 
+  filter(!str_detect(Tumor_Seq_Allele2, "N") & !is.na(Tumor_Seq_Allele2)) 
+  
+X3 <- nrow(TCGA_mut_file_3)
+print("Number of removed mutations")
+X2 - X3
+
+TCGA_mut_file_2 %>% 
+  filter(str_detect(Tumor_Seq_Allele2, "N") | is.na(Tumor_Seq_Allele2)) %>% 
+  nrow()
+#17 removed
+```
+
+# 5.0 rearrange
+```{r}
+print("rearrange mut file for VEP")
+TCGA_mut_file_3_rearranged <- TCGA_mut_file_3 %>% 
+  arrange(Tumor_Sample_Barcode, factor(Chromosome, levels = (c(1:22, "X"))), Start_Position)
+
+print("final mut number")
+nrow(TCGA_mut_file_3_rearranged)
+
+print("check sample number")
+length(unique((TCGA_mut_file_3_rearranged$Tumor_Sample_Barcode)))
+
+print("start mut number")
+print(X0)
+print("final mut number removed")
+X0 - X3
+
+```
+
+# 6.0 save
+```{r}
+TCGA_sample <- TCGA_mut_file_3_rearranged %>% 
+  distinct(Tumor_Sample_Barcode) %>% 
+  select(Tumor_Sample_Barcode)
+
+TCGA_sample %>% 
+  write_tsv("result/3_tcga/table/1_dataprep/1_sample_sheet/2_annotationfile/tcga_sample_forvep.txt",
+            col_names = FALSE)
+
+# no_of_chunks <- 5
+f <- ceiling(1:nrow(TCGA_sample) / nrow(TCGA_sample) * 5)
+res <- split(TCGA_sample, f)
+
+print(TCGA_sample %>% nrow())
+# for sample join in final vep
+for (i in 1:5) {
+  res[[i]] %>%
+    write_tsv(paste("result/3_tcga/table/1_dataprep/1_sample_sheet/2_annotationfile/tcga_sample_chunk_", i,".txt", sep = ""), col_names = FALSE)
+}
+
+TCGA_mut_file_3_rearranged %>% 
+  write_tsv("result/3_tcga/table/1_dataprep/2_mutation_sheet/2_annotationfile/tcga_mut_beforevep_allcolumns.txt")
+
+TCGA_mut_file_3_rearranged %>% 
+  select(Chromosome, Start_Position, End_Position, Reference_Allele, Tumor_Seq_Allele2, Tumor_Sample_Barcode) %>% 
+  write_tsv("result/3_tcga/table/1_dataprep/2_mutation_sheet/2_annotationfile/tcga_mut_forvep.txt")
+
+print(nrow(TCGA_mut_file_3_rearranged))
+```
+
+
+```{r}
+sessionInfo()
+```
+
+

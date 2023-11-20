@@ -1,0 +1,472 @@
+---
+title: "3_tcga_after annotation"
+author: "Sara Horie"
+date: "2023-03-20"
+output: html_document
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(error = FALSE)
+knitr::opts_chunk$set(message = FALSE)
+knitr::opts_chunk$set(warning = FALSE)
+```
+
+```{r library}
+library(tidyverse)
+library(dplyr)
+library(readxl)
+library(RColorBrewer)
+library(viridis)
+library(knitr)
+library(cowplot)
+library(ggplot2)
+library(devtools)
+library(ggpubr)
+library(rstatix)
+library(ggrepel)
+library(openxlsx)
+library(data.table)
+library(ggsci)
+library(readxl)
+library(ggsci)
+```
+
+```{r theme}
+theme_set(theme_cowplot())
+knitr::opts_knit$set(root.dir = rprojroot::find_rstudio_root_file())
+
+dir.create("result/3_tcga/table/1_dataprep/2_mutation_sheet/3_annotation/output/output_annovar/", recursive = TRUE, showWarnings = FALSE)
+dir.create("result/3_tcga/table/1_dataprep/2_mutation_sheet/3_annotation/output/output_VEP/", recursive = TRUE, showWarnings = FALSE)
+dir.create("result/3_tcga/table/1_dataprep/2_mutation_sheet/3_annotation/output/after_join/", recursive = TRUE, showWarnings = FALSE)
+```
+
+# 1.0 input
+## 1.1 from 1_tcga_sample
+```{r}
+tcga_sample_withcancertypes <- read_tsv("result/3_tcga/table/1_dataprep/1_sample_sheet/1_dataprep/tcga_samplesheet.txt")
+```
+
+## 1.2 from 2_tcga_mut
+```{r}
+df_tcga_mutations_rearranged <- read_tsv("result/3_tcga/table/1_dataprep/2_mutation_sheet/2_annotationfile/tcga_mut_beforevep_allcolumns.txt")
+nrow(df_tcga_mutations_rearranged)
+colnames(df_tcga_mutations_rearranged)
+# 3392079
+```
+
+# 2.0 VEP
+```{r}
+cols = cols(Chromosome = col_character(),
+            HGVS_OFFSET = col_double(),
+            SOMATIC = col_character(),
+            PHENO = col_character(),
+            Entrez_Gene_Id = col_double(),
+            Start_Position = col_double(),
+            End_Position = col_double(), 
+            Tumor_Seq_Allele1 = col_character(),
+            Tumor_Seq_Allele2 = col_character(),
+            Matched_Norm_Sample_Barcode = col_character(),
+            Match_Norm_Seq_Allele1 = col_character(),
+            Match_Norm_Seq_Allele2 = col_character(),
+            t_depth = col_double(),
+            n_depth = col_double(),
+            ALLELE_NUM = col_double(),
+            Reference_Allele = col_character(),
+            Allele = col_character(),
+            DISTANCE = col_double(),
+            STRAND_VEP = col_double(),
+            AF = col_double(),
+            AFR_AF = col_double(),
+            AMR_AF = col_double(),
+            ASN_AF = col_double(),
+            EAS_AF = col_double(),
+            EUR_AF = col_double(),
+            SAS_AF = col_double(),
+            AA_AF = col_double(),
+            EA_AF = col_double(),
+            MOTIF_SCORE_CHANGE = col_character(),
+            MOTIF_POS = col_character(),
+            PUBMED = col_character(),
+            PICK = col_double(),
+            TSL = col_double(),
+            GENE_PHENO = col_double(),
+            gnomAD_AF = col_double(),
+            gnomAD_AFR_AF = col_double(),
+            gnomAD_AMR_AF = col_double(),
+            gnomAD_ASJ_AF = col_double(),
+            gnomAD_EAS_AF = col_double(),
+            gnomAD_FIN_AF = col_double(),
+            gnomAD_NFE_AF = col_double(),
+            gnomAD_OTH_AF = col_double(),
+            gnomAD_SAS_AF = col_double(),
+            vcf_pos = col_double(),
+            ToMMo14K_AF = col_double(),
+            ToMMo14K_AC = col_double(),
+            ToMMo14K_AN = col_double()
+)
+
+```
+
+## 2.1 VEP read in
+```{r}
+TCGA_afterVEP_1 <- read_tsv("result/3_tcga/table/1_dataprep/2_mutation_sheet/3_annotation/output/output_VEP/vep_TCGA_1.txt",
+                          col_types = cols)
+
+TCGA_afterVEP_2 <- read_tsv("result/3_tcga/table/1_dataprep/2_mutation_sheet/3_annotation/output/output_VEP/vep_TCGA_2.txt",
+                          col_types = cols)
+
+TCGA_afterVEP_3 <- read_tsv("result/3_tcga/table/1_dataprep/2_mutation_sheet/3_annotation/output/output_VEP/vep_TCGA_3.txt",
+                          col_types = cols)
+
+TCGA_afterVEP_4 <- read_tsv("result/3_tcga/table/1_dataprep/2_mutation_sheet/3_annotation/output/output_VEP/vep_TCGA_4.txt",
+                          col_types = cols)
+
+TCGA_afterVEP_5 <- read_tsv("result/3_tcga/table/1_dataprep/2_mutation_sheet/3_annotation/output/output_VEP/vep_TCGA_5.txt",
+                          col_types = cols)
+
+TCGA_afterVEP <- bind_rows(TCGA_afterVEP_1,
+                           TCGA_afterVEP_2,
+                           TCGA_afterVEP_3,
+                           TCGA_afterVEP_4,
+                           TCGA_afterVEP_5)
+
+nrow(TCGA_afterVEP_1)
+nrow(TCGA_afterVEP_2)
+nrow(TCGA_afterVEP_3)
+nrow(TCGA_afterVEP_4)
+nrow(TCGA_afterVEP_5)
+# TCGA mut number
+print(nrow(TCGA_afterVEP))
+
+stopifnot(nrow(df_tcga_mutations_rearranged) == nrow(TCGA_afterVEP))
+
+TCGA_afterVEP %>% 
+  select(Hugo_Symbol, HGVSp_Short, Chromosome, Start_Position, End_Position, Reference_Allele, Tumor_Seq_Allele2) %>%
+  write_tsv("result/3_tcga/table/1_dataprep/2_mutation_sheet/3_annotation/output/output_VEP/vep_tcga_all.txt")
+```
+
+## 2.2 Togovar
+```{r}
+TCGA_afterVEP_1_togovar <- read_tsv("result/3_tcga/table/1_dataprep/2_mutation_sheet/3_annotation/output/output_VEP/vep_TCGA_1_togovar.txt",
+                          col_types = cols)
+
+TCGA_afterVEP_2_togovar <- read_tsv("result/3_tcga/table/1_dataprep/2_mutation_sheet/3_annotation/output/output_VEP/vep_TCGA_2_togovar.txt",
+                          col_types = cols)
+
+TCGA_afterVEP_3_togovar <- read_tsv("result/3_tcga/table/1_dataprep/2_mutation_sheet/3_annotation/output/output_VEP/vep_TCGA_3_togovar.txt",
+                          col_types = cols)
+
+TCGA_afterVEP_4_togovar <- read_tsv("result/3_tcga/table/1_dataprep/2_mutation_sheet/3_annotation/output/output_VEP/vep_TCGA_4_togovar.txt",
+                          col_types = cols)
+
+TCGA_afterVEP_5_togovar <- read_tsv("result/3_tcga/table/1_dataprep/2_mutation_sheet/3_annotation/output/output_VEP/vep_TCGA_5_togovar.txt",
+                          col_types = cols)
+
+TCGA_afterVEP_togovar <- bind_rows(TCGA_afterVEP_1_togovar,
+                           TCGA_afterVEP_2_togovar,
+                           TCGA_afterVEP_3_togovar,
+                           TCGA_afterVEP_4_togovar,
+                           TCGA_afterVEP_5_togovar)
+
+stopifnot(TCGA_afterVEP_1_togovar %>% filter(!is.na(togovar_AF)) %>% count(Chromosome) %>% nrow() == 23)
+stopifnot(TCGA_afterVEP_2_togovar %>% filter(!is.na(togovar_AF)) %>% count(Chromosome) %>% nrow() == 23)
+stopifnot(TCGA_afterVEP_3_togovar %>% filter(!is.na(togovar_AF)) %>% count(Chromosome) %>% nrow() == 23)
+stopifnot(TCGA_afterVEP_4_togovar %>% filter(!is.na(togovar_AF)) %>% count(Chromosome) %>% nrow() == 23)
+stopifnot(TCGA_afterVEP_5_togovar %>% filter(!is.na(togovar_AF)) %>% count(Chromosome) %>% nrow() == 23)
+
+stopifnot(nrow(TCGA_afterVEP_1_togovar) == nrow(TCGA_afterVEP_1))
+stopifnot(nrow(TCGA_afterVEP_2_togovar) == nrow(TCGA_afterVEP_2))
+stopifnot(nrow(TCGA_afterVEP_3_togovar) == nrow(TCGA_afterVEP_3))
+stopifnot(nrow(TCGA_afterVEP_4_togovar) == nrow(TCGA_afterVEP_4))
+stopifnot(nrow(TCGA_afterVEP_5_togovar) == nrow(TCGA_afterVEP_5))
+# TCGA mut number
+print(nrow(TCGA_afterVEP_togovar))
+
+stopifnot(nrow(df_tcga_mutations_rearranged) == nrow(TCGA_afterVEP_togovar))
+
+TCGA_afterVEP_1_togovar %>% 
+  filter(!is.na(togovar_AF)) %>% 
+  count(Chromosome) %>% 
+  nrow()
+# A tibble: 23 x 2
+#    Chromosome     n
+#    <chr>      <int>
+#  1 1           1777
+#  2 10           587
+#  3 11          1021
+#  4 12           814
+#  5 13           226
+#  6 14           541
+#  7 15           505
+#  8 16           748
+#  9 17           984
+# 10 18           289
+# 2 19          1237
+#  3 2           1209
+#  4 20           484
+#  5 21           221
+#  6 22           344
+#  7 3            878
+#  8 4            549
+#  9 5            757
+# 10 6            766
+# 11 7            952
+# 12 8            625
+# 13 9            591
+# 14 X            434
+```
+
+```{r}
+print("test")
+test_TCGA <- bind_cols(TCGA_afterVEP, 
+                       TCGA_afterVEP_togovar %>% select(Chromosome_togovar = Chromosome, 
+                                                                Start_Position_togovar = Start_Position,
+                                                                End_Position_togovar = End_Position,
+                                                                Tumor_Seq_Allele2_togovar = Tumor_Seq_Allele2
+                       ))
+
+stopifnot(test_TCGA %>% 
+            filter(Chromosome != Chromosome_togovar |
+                     Start_Position != Start_Position_togovar |
+                     End_Position != End_Position_togovar |
+                     Tumor_Seq_Allele2 != Tumor_Seq_Allele2_togovar) %>% 
+            nrow() == 0)
+
+TCGA_afterVEP <- bind_cols(TCGA_afterVEP,
+                           TCGA_afterVEP_togovar %>% 
+                             select(togovar_AF, togovar_AC, togovar_AN))
+
+```
+
+
+## 2.3 combine with VEP data
+```{r}
+df_tcga_mutations_rearranged_forjoin <- df_tcga_mutations_rearranged %>% 
+  select(Hugo_Symbol, HGVSp_Short, Chromosome, Start_Position, End_Position, Reference_Allele, Tumor_Seq_Allele2, Tumor_Sample_Barcode, t_depth, t_ref_count, t_alt_count) %>% 
+  dplyr::rename(Hugo_Symbol_prior = Hugo_Symbol,
+                Chromosome_prior = Chromosome,
+                # Tumor_Sample_Barcode_prior = Tumor_Sample_Barcode,
+                HGVSp_Short_prior = HGVSp_Short,
+                Start_Position_prior = Start_Position,
+                End_Position_prior = End_Position,
+                Reference_Allele_prior = Reference_Allele,
+                Tumor_Seq_Allele2_prior = Tumor_Seq_Allele2)
+
+nrow(df_tcga_mutations_rearranged_forjoin)
+
+print("join VEP")
+df_gene_mutations_withVEP_TCGA <- df_tcga_mutations_rearranged_forjoin %>% 
+  bind_cols(TCGA_afterVEP %>% 
+              select(-t_depth, -t_ref_count, -t_alt_count, -n_depth, -n_ref_count, -n_alt_count) %>% 
+              dplyr::rename(Tumor_Sample_Barcode_VEP = Tumor_Sample_Barcode))
+
+df_gene_mutations_withVEP_TCGA %>% 
+  write_tsv("result/3_tcga/table/1_dataprep/2_mutation_sheet/3_annotation/output/after_join/tcga_mutations_withVEP_TCGA_tommo.txt")
+
+df_gene_mutations_withVEP_TCGA %>% 
+  filter(!is.na(ToMMo14K_AF)) %>% 
+  count(Variant_Type)
+
+df_gene_mutations_withVEP_TCGA  %>% 
+  filter(Chromosome_prior != Chromosome | 
+           Start_Position_prior != Start_Position | 
+           End_Position_prior != End_Position |
+           Reference_Allele_prior != Reference_Allele | 
+           Tumor_Seq_Allele2_prior != Tumor_Seq_Allele2) %>% 
+  select(contains(c("Chromosome", "Start", "End")), "Reference_Allele_prior", "Reference_Allele", "Tumor_Seq_Allele2_prior", "Tumor_Seq_Allele2", 
+         "Hugo_Symbol_prior", "Hugo_Symbol",
+         "HGVSp_Short_prior", "HGVSp_Short",
+         "Variant_Classification")
+# none unmatching
+```
+
+## 2.4 check Hugo Symbol with VEP
+```{r}
+print("sample check")
+df_gene_mutations_withVEP_TCGA %>% filter(Hugo_Symbol_prior != Hugo_Symbol) %>% nrow()
+
+df_gene_mutations_withVEP_TCGA %>% 
+  filter(Hugo_Symbol_prior != Hugo_Symbol) %>% 
+  count(Hugo_Symbol_prior, Hugo_Symbol) %>% 
+  arrange(-n)
+
+df_gene_mutations_withVEP_TCGA %>% 
+  filter(Hugo_Symbol_prior != Hugo_Symbol) %>% 
+  # select(Chromosome, Start_Position, End_Position, Reference_Allele, Tumor_Seq_Allele2) %>%
+  filter(Hugo_Symbol_prior == "TP53" | Hugo_Symbol == "TP53")
+# overlapping area between TP53 and WRAP53
+
+```
+
+# 3.0 annovar readin
+```{r}
+print("annovar")
+cols_annovar <- cols(
+  Chr = col_character(),
+  Start = col_double(),
+  End = col_double(),
+  Ref = col_character(),
+  Alt = col_character(),
+  Func.refGene = col_character(),
+  Gene.refGene = col_character(),
+  GeneDetail.refGene = col_character(),
+  ExonicFunc.refGene = col_character(),
+  AAChange.refGene = col_character(),
+  Func.ensGene = col_character(),
+  Gene.ensGene = col_character(),
+  GeneDetail.ensGene = col_character(),
+  ExonicFunc.ensGene = col_character(),
+  AAChange.ensGene = col_character(),
+  cytoBand = col_character(),
+  genomicSuperDups = col_character(),
+  esp6500siv2_all = col_double(),
+  `1000g2010nov_all` = col_double(),
+  `1000g2014oct_all` = col_double(),
+  `1000g2014oct_afr` = col_double(),
+  `1000g2014oct_eas` = col_double(),
+  `1000g2014oct_eur` = col_double(),
+  snp131 = col_character(),
+  snp138 = col_character(),
+  avsnp150 = col_character(),
+  # `ToMMo-14KJPN-20211208-af` = col_double(),
+  `ToMMO-3.5kjpnv2-20181105` = col_double(),
+  snp131NonFlagged = col_character(),
+  snp138NonFlagged = col_character(),
+  gnomAD_exome_ALL = col_double(),
+  gnomAD_exome_AFR = col_double(),
+  gnomAD_exome_AMR = col_double(),
+  gnomAD_exome_ASJ = col_double(),
+  gnomAD_exome_EAS = col_double(),
+  gnomAD_exome_FIN = col_double(),
+  gnomAD_exome_NFE = col_double(),
+  gnomAD_exome_OTH = col_double(),
+  gnomAD_exome_SAS = col_double(),
+  gnomad211exome_AF = col_double(),
+  gnomad211exome_AF_popmax = col_double(),
+  gnomad211exome_AF_male = col_double(),
+  gnomad211exome_AF_female = col_double(),
+  gnomad211exome_AF_raw = col_double(),
+  gnomad211exome_AF_afr = col_double(),
+  gnomad211exome_AF_sas = col_double(),
+  gnomad211exome_AF_amr = col_double(),
+  gnomad211exome_AF_eas = col_double(),
+  gnomad211exome_AF_nfe = col_double(),
+  gnomad211exome_AF_fin = col_double(),
+  gnomad211exome_AF_asj = col_double(),
+  gnomad211exome_AF_oth = col_double(),
+  gnomad211exome_non_topmed_AF_popmax = col_double(),
+  gnomad211exome_non_neuro_AF_popmax = col_double(),
+  gnomad211exome_non_cancer_AF_popmax = col_double(),
+  gnomad211exome_controls_AF_popmax = col_double(),
+  gnomAD_genome_ALL = col_double(),
+  gnomAD_genome_AFR = col_double(),
+  gnomAD_genome_AMR = col_double(),
+  gnomAD_genome_ASJ = col_double(),
+  gnomAD_genome_EAS = col_double(),
+  gnomAD_genome_FIN = col_double(),
+  gnomAD_genome_NFE = col_double(),
+  gnomAD_genome_OTH = col_double(),
+  AF = col_double(),
+  AF_popmax = col_double(),
+  AF_male = col_double(),
+  AF_female = col_double(),
+  AF_raw = col_double(),
+  AF_afr = col_double(),
+  AF_sas = col_double(),
+  AF_amr = col_double(),
+  AF_eas = col_double(),
+  AF_nfe = col_double(),
+  AF_fin = col_double(),
+  AF_asj = col_double(),
+  AF_oth = col_double(),
+  non_topmed_AF_popmax = col_double(),
+  non_neuro_AF_popmax = col_double(),
+  non_cancer_AF_popmax = col_double(),
+  controls_AF_popmax = col_double(),
+  cosmic68wgs = col_character(),
+  cosmic70 = col_character(),
+  clinvar_20150629 = col_character(), 
+  SIFT_score = col_double(),
+  SIFT_pred = col_character(),
+  Polyphen2_HDIV_score = col_double(),
+  Polyphen2_HDIV_pred = col_character(),
+  Polyphen2_HVAR_score = col_double(),
+  Polyphen2_HVAR_pred = col_character(),
+  LRT_score = col_double(),
+  LRT_pred = col_character(),
+  MutationTaster_score = col_double(),
+  MutationTaster_pred = col_character(),
+  MutationAssessor_score = col_double(),
+  MutationAssessor_pred = col_character(),
+  FATHMM_score = col_double(),
+  FATHMM_pred = col_character(),
+  RadialSVM_score = col_double(),
+  RadialSVM_pred = col_character(),
+  LR_score = col_double(),
+  LR_pred = col_character(),
+  VEST3_score = col_double(),
+  CADD_raw = col_double(),
+  CADD_phred = col_double(),
+  `GERP++_RS` = col_character(),
+  phyloP46way_placental = col_double(),
+  phyloP100way_vertebrate = col_character(),
+  SiPhy_29way_logOdds = col_character(),
+  Otherinfo = col_character()
+)
+```
+
+## 3.1 readin annovar
+```{r}
+TCGA_afterannovar <- read_tsv("result/3_tcga/table/1_dataprep/2_mutation_sheet/3_annotation/output/output_annovar/annovar_TCGA.txt",
+                              na = c("", ".", "---", "NA"),
+                              col_names = TRUE,
+                              col_types = cols_annovar,
+                              col_select = 1:109) %>% 
+  select(-Otherinfo)
+
+nrow(TCGA_afterannovar)
+ncol(TCGA_afterannovar)
+# 3392079
+
+
+# no problem with TCGA
+stopifnot(nrow(df_tcga_mutations_rearranged) == nrow(TCGA_afterannovar))
+```
+
+# 4. bind VEP annovar
+```{r}
+print("bind cols")
+df_TCGA_withVEPannovar <- df_gene_mutations_withVEP_TCGA %>% 
+  dplyr::rename(AF_VEP = AF) %>% 
+  bind_cols(TCGA_afterannovar)
+```
+
+## 4.1 check
+```{r}
+df_TCGA_withVEPannovar %>% 
+  filter(Hugo_Symbol_prior != Gene.refGene) %>%
+  count(Hugo_Symbol_prior, Gene.refGene) %>% 
+  arrange(-n)
+
+df_TCGA_withVEPannovar %>% 
+  filter(Chromosome_prior != Chr | Start_Position_prior != Start | End_Position_prior != End, Reference_Allele_prior != Ref | Tumor_Seq_Allele2_prior != Alt) %>% 
+  select(contains(c("Chr", "Start", "End")), "Reference_Allele_prior", "Ref", "Tumor_Seq_Allele2_prior", "Alt", "Hugo_Symbol_prior", "Gene.refGene")
+# none
+```
+
+## 4.2 save VEPannovar
+```{r}
+print("save")
+df_TCGA_withVEPannovar %>% 
+  select(-Tumor_Validation_Allele1, -Tumor_Validation_Allele2, -Match_Norm_Validation_Allele1, -Match_Norm_Validation_Allele2,
+         -Verification_Status, -Validation_Status, -Mutation_Status, -Sequence_Source, -Validation_Method, -Score, -BAM_File,
+         -Sequencer, -Tumor_Sample_UUID, -Matched_Norm_Sample_UUID) %>%
+  write_tsv("result/3_tcga/table/1_dataprep/2_mutation_sheet/3_annotation/TCGA_withVEPannovar.txt")
+```
+
+```{r}
+sessionInfo()
+```
+
