@@ -1,0 +1,545 @@
+---
+title: "2_GENIE_SNPVAF_filtering"
+author: "Sara Horie"
+date: '2022-05-01'
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(error = FALSE)
+knitr::opts_chunk$set(message = FALSE)
+knitr::opts_chunk$set(warning = FALSE)
+```
+
+```{r library}
+library(tidyverse)
+library(dplyr)
+library(readxl)
+library(RColorBrewer)
+library(viridis)
+library(knitr)
+library(ggsci)
+library(cowplot)
+library(ggplot2)
+library(ggpubr)
+library(rstatix)
+library(ggrepel)
+library(openxlsx)
+library(data.table)
+library(GenomicRanges)
+```
+
+```{r theme}
+theme_set(theme_cowplot())
+knitr::opts_knit$set(root.dir = rprojroot::find_rstudio_root_file())
+
+dir.create("result/2_ccat/table/1_panel_selection/2_mutation_sheet/4_mutfiltering/", recursive = TRUE, showWarnings = FALSE)
+dir.create("result/1_genie/table/1_panel_selection/2_mutation_sheet/4_mutfiltering/", recursive = TRUE, showWarnings = FALSE)
+```
+
+# 0 Read in CCAT from 1_3_dataprep
+```{r}
+col_ccat <- cols(chr = col_character(),
+                 MSI = col_character(),
+                 MSI_status = col_character(),
+                 MSI_num = col_double())
+
+col_ccatsample <- cols(HER2_breast_FISH = col_integer(),
+                       HER2_breast = col_integer(),
+                       gBRCA1 = col_integer(),
+                       gBRCA2 = col_integer(),
+                       EGFR_lung = col_integer(),
+                       EGFR_lung_TKI = col_integer(),
+                       ALK = col_integer(),
+                       ROS1 = col_integer(),
+                       PDL1 = col_integer(),
+                       ER = col_integer(),
+                       PgR = col_integer(),
+                       BRAF_lung = col_integer()
+                       )
+
+cols_combined = cols(Chromosome = col_character(),
+                     Chr = col_character(),
+                     HGVS_OFFSET = col_double(),
+                     SOMATIC = col_character(),
+                     PHENO = col_character(),
+                     Entrez_Gene_Id = col_double(),
+                     Start_Position = col_double(),
+                     End_Position = col_double(), 
+                     Tumor_Seq_Allele1 = col_character(),
+                     Tumor_Seq_Allele2 = col_character(),
+                     Matched_Norm_Sample_Barcode = col_character(),
+                     Match_Norm_Seq_Allele1 = col_character(),
+                     Match_Norm_Seq_Allele2 = col_character(),
+                     t_depth = col_double(),
+                     n_depth = col_double(),
+                     ALLELE_NUM = col_double(),
+                     Reference_Allele = col_character(),
+                     Allele = col_character(),
+                     DISTANCE = col_double(),
+                     STRAND_VEP = col_double(),
+                     AF = col_double(),
+                     AFR_AF = col_double(),
+                     AMR_AF = col_double(),
+                     ASN_AF = col_double(),
+                     EAS_AF = col_double(),
+                     EUR_AF = col_double(),
+                     SAS_AF = col_double(),
+                     AA_AF = col_double(),
+                     EA_AF = col_double(),
+                     MOTIF_SCORE_CHANGE = col_character(),
+                     MOTIF_POS = col_character(),
+                     PUBMED = col_character(),
+                     PICK = col_double(),
+                     TSL = col_double(),
+                     GENE_PHENO = col_double(),
+                     gnomAD_AF = col_double(),
+                     gnomAD_AFR_AF = col_double(),
+                     gnomAD_AMR_AF = col_double(),
+                     gnomAD_ASJ_AF = col_double(),
+                     gnomAD_EAS_AF = col_double(),
+                     gnomAD_FIN_AF = col_double(),
+                     gnomAD_NFE_AF = col_double(),
+                     gnomAD_OTH_AF = col_double(),
+                     gnomAD_SAS_AF = col_double(),
+                     vcf_pos = col_double(),
+                     ToMMo14K_AF = col_double(),
+                     ToMMo14K_AC = col_double(),
+                     ToMMo14K_AN = col_double(),
+                     togovar_AF = col_double(),
+                     togovar_AC = col_double(),
+                     togovar_AN = col_double(),
+                     Chr = col_character(),
+                     Start = col_double(),
+                     End = col_double(),
+                     Ref = col_character(),
+                     Alt = col_character(),
+                     Func.refGene = col_character(),
+                     Gene.refGene = col_character(),
+                     GeneDetail.refGene = col_character(),
+                     ExonicFunc.refGene = col_character(),
+                     AAChange.refGene = col_character(),
+                     Func.ensGene = col_character(),
+                     Gene.ensGene = col_character(),
+                     GeneDetail.ensGene = col_character(),
+                     ExonicFunc.ensGene = col_character(),
+                     AAChange.ensGene = col_character(),
+                     cytoBand = col_character(),
+                     genomicSuperDups = col_character(),
+                     esp6500siv2_all = col_double(),
+                     `1000g2010nov_all` = col_double(),
+                     `1000g2014oct_all` = col_double(),
+                     `1000g2014oct_afr` = col_double(),
+                     `1000g2014oct_eas` = col_double(),
+                     `1000g2014oct_eur` = col_double(),
+                     snp131 = col_character(),
+                     snp138 = col_character(),
+                     avsnp150 = col_character(),
+                     `ToMMO-3.5kjpnv2-20181105` = col_double(),
+                     snp131NonFlagged = col_character(),
+                     snp138NonFlagged = col_character(),
+                     gnomAD_exome_ALL = col_double(),
+                     gnomAD_exome_AFR = col_double(),
+                     gnomAD_exome_AMR = col_double(),
+                     gnomAD_exome_ASJ = col_double(),
+                     gnomAD_exome_EAS = col_double(),
+                     gnomAD_exome_FIN = col_double(),
+                     gnomAD_exome_NFE = col_double(),
+                     gnomAD_exome_OTH = col_double(),
+                     gnomAD_exome_SAS = col_double(),
+                     gnomad211exome_AF = col_double(),
+                     gnomad211exome_AF_popmax = col_double(),
+                     gnomad211exome_AF_male = col_double(),
+                     gnomad211exome_AF_female = col_double(),
+                     gnomad211exome_AF_raw = col_double(),
+                     gnomad211exome_AF_afr = col_double(),
+                     gnomad211exome_AF_sas = col_double(),
+                     gnomad211exome_AF_amr = col_double(),
+                     gnomad211exome_AF_eas = col_double(),
+                     gnomad211exome_AF_nfe = col_double(),
+                     gnomad211exome_AF_fin = col_double(),
+                     gnomad211exome_AF_asj = col_double(),
+                     gnomad211exome_AF_oth = col_double(),
+                     AF = col_double(),
+                     AF_popmax = col_double(),
+                     AF_male = col_double(),
+                     AF_female = col_double(),
+                     AF_raw = col_double(),
+                     AF_afr = col_double(),
+                     AF_sas = col_double(),
+                     AF_amr = col_double(),
+                     AF_eas = col_double(),
+                     AF_nfe = col_double(),
+                     AF_fin = col_double(),
+                     AF_asj = col_double(),
+                     AF_oth = col_double(),
+                     cosmic68wgs = col_character(),
+                     cosmic70 = col_character(),
+                     clinvar_20150629 = col_character()
+)
+```
+
+
+```{r}
+print("sample file")
+df_GENIE_sample_unknown <- read_tsv("result/1_genie/table/1_panel_selection/1_sample_sheet/1_dataprep/genie_sample_sheet_unknownrace.txt")
+
+#######GENIE VEPannovar variant
+df_DFCI_withVEPannovar_pre <- read_tsv("result/1_genie/table/1_panel_selection/2_mutation_sheet/3_annotation/DFCI_withVEPannovar.txt",
+                                       col_types = cols_combined)
+df_MSK_withVEPannovar_pre <- read_tsv("result/1_genie/table/1_panel_selection/2_mutation_sheet/3_annotation/MSK_withVEPannovar.txt",
+                                      col_types = cols_combined)
+df_DUKE_withVEPannovar_pre <- read_tsv("result/1_genie/table/1_panel_selection/2_mutation_sheet/3_annotation/DUKE_withVEPannovar.txt",
+                                       col_types = cols_combined)
+
+print("remove unknown")
+
+df_DFCI_withVEPannovar <- df_DFCI_withVEPannovar_pre %>% 
+  filter(!Tumor_Sample_Barcode %in% df_GENIE_sample_unknown$Tumor_Sample_Barcode)
+nrow(df_DFCI_withVEPannovar)
+df_MSK_withVEPannovar <- df_MSK_withVEPannovar_pre %>% 
+  filter(!Tumor_Sample_Barcode %in% df_GENIE_sample_unknown$Tumor_Sample_Barcode)
+nrow(df_MSK_withVEPannovar)
+df_DUKE_withVEPannovar <- df_DUKE_withVEPannovar_pre %>% 
+  filter(!Tumor_Sample_Barcode %in% df_GENIE_sample_unknown$Tumor_Sample_Barcode)
+nrow(df_DUKE_withVEPannovar)
+
+print("number removed")
+df_DFCI_withVEPannovar_pre %>% 
+  filter(Tumor_Sample_Barcode %in% df_GENIE_sample_unknown$Tumor_Sample_Barcode) %>% 
+  nrow()
+df_MSK_withVEPannovar_pre %>% 
+  filter(Tumor_Sample_Barcode %in% df_GENIE_sample_unknown$Tumor_Sample_Barcode) %>% 
+  nrow()
+df_DUKE_withVEPannovar_pre %>% 
+  filter(Tumor_Sample_Barcode %in% df_GENIE_sample_unknown$Tumor_Sample_Barcode) %>% 
+  nrow()
+```
+
+# 1.0 Variant Class filter
+
+```{r}
+print("Variant filtering")
+df_DFCI_withVEPannovar_variant <- df_DFCI_withVEPannovar %>% 
+    filter(Variant_Classification %in% c("Frame_Shift_Del", "Frame_Shift_Ins", "In_Frame_Del", "In_Frame_Ins",
+                                       "Missense_Mutation", "Nonsense_Mutation", 
+                                       "Nonstop_Mutation", "Splice_Site", "Translation_Start_Site",
+                                       "Silent")) %>% 
+    mutate(VAF = t_alt_count/t_depth)
+
+df_MSK_withVEPannovar_variant <- df_MSK_withVEPannovar %>% 
+    filter(Variant_Classification %in% c("Frame_Shift_Del", "Frame_Shift_Ins", "In_Frame_Del", "In_Frame_Ins",
+                                       "Missense_Mutation", "Nonsense_Mutation", 
+                                       "Nonstop_Mutation", "Splice_Site", "Translation_Start_Site",
+                                       "Silent")) %>% 
+    mutate(VAF = t_alt_count/t_depth)
+
+df_DUKE_withVEPannovar_variant <- df_DUKE_withVEPannovar %>% 
+    filter(Variant_Classification %in% c("Frame_Shift_Del", "Frame_Shift_Ins", "In_Frame_Del", "In_Frame_Ins",
+                                       "Missense_Mutation", "Nonsense_Mutation", 
+                                       "Nonstop_Mutation", "Splice_Site", "Translation_Start_Site",
+                                       "Silent")) %>% 
+    mutate(VAF = t_alt_count/t_depth)
+
+DFCI_x1 <- df_DFCI_withVEPannovar %>% nrow()
+MSK_x1 <- df_MSK_withVEPannovar %>% nrow()
+DUKE_x1 <- df_DUKE_withVEPannovar %>% nrow()
+
+DFCI_x2 <- df_DFCI_withVEPannovar_variant %>% nrow()
+MSK_x2 <- df_MSK_withVEPannovar_variant %>% nrow()
+DUKE_x2 <- df_DUKE_withVEPannovar_variant %>% nrow()
+
+print("mutation count: before intron removal. DFCI, MSK, DUKE")
+print(paste(DFCI_x1, MSK_x1, DUKE_x1))
+print("mutation count: after intron removal")
+print(paste(DFCI_x2, MSK_x2, DUKE_x2))
+print("mutation removed with intron removal")
+print(paste(DFCI_x1 - DFCI_x2, MSK_x1 - MSK_x2, DUKE_x1 - DUKE_x2))
+```
+
+# 2. Input
+## 2.1 Known somatic sites
+```{r }
+known_somatic_sites <- read_tsv("../../data/genie/MSK_data/known_somatic_sites.bed",
+                                skip = 10,
+                                col_names = c("Chr", "Start", "End", "Gene")) %>% 
+  separate(col = Gene, sep = ":", into = c("Gene", "pos"), extra = "drop")
+
+GRanges_somatic_sites <- GRanges(seqnames = known_somatic_sites$Chr,
+                                 ranges = IRanges(start = known_somatic_sites$Start + 1,
+                                                  end = known_somatic_sites$End),
+                                 names = known_somatic_sites$Gene)
+
+```
+
+## 2.2 COSMIC data 
+```{r}
+make_cosmic <- function(df){
+  df_cos <- df %>%
+    mutate(cosmic70list = cosmic70 %>%
+             str_remove("^.*=") %>% 
+             str_remove("\\(([^)]*)\\)[^(]*$")
+    )
+  
+  # count cosmic number
+  m <- stringr::str_split(df_cos$cosmic70list, "\\(.*?\\),",  simplify = TRUE) 
+  m_int <- matrix(as.integer(m), nrow = nrow(m), ncol = ncol(m))
+  df_cos$cosmic70count <- rowSums(m_int, na.rm = TRUE)
+  df_cos$cosmic70list <- NULL 
+  
+  return(df_cos)
+  
+}
+
+df_MSK_withVEPannovar_variant_cos <- make_cosmic(df_MSK_withVEPannovar_variant)
+df_DFCI_withVEPannovar_variant_cos <- make_cosmic(df_DFCI_withVEPannovar_variant) 
+df_DUKE_withVEPannovar_variant_cos <- make_cosmic(df_DUKE_withVEPannovar_variant) 
+
+print("save cosmic data")
+df_MSK_withVEPannovar_variant_cos %>% 
+   write_tsv("result/1_genie/table/1_panel_selection/2_mutation_sheet/4_mutfiltering/MSK_annovar_cos.txt")
+df_DFCI_withVEPannovar_variant_cos %>% 
+   write_tsv("result/1_genie/table/1_panel_selection/2_mutation_sheet/4_mutfiltering/DFCI_annovar_cos.txt")
+df_DUKE_withVEPannovar_variant_cos %>% 
+  write_tsv("result/1_genie/table/1_panel_selection/2_mutation_sheet/4_mutfiltering/DUKE_annovar_cos.txt")
+```
+
+# 3.0 SNP filtering functions
+```{r}
+SNPfilterandrescue <- function(df){
+  
+  df_SNPfilter <- df %>% 
+    filter(is.na(esp6500siv2_all) 
+           | esp6500siv2_all < 0.0001
+           | cosmic70count >= 30) %>% #ESP
+    filter(is.na(`1000g2014oct_all`) 
+           | `1000g2014oct_all` < 0.0001
+           | cosmic70count >= 30) %>%  #1000 genome
+    filter(is.na(gnomad211exome_AF_popmax) 
+           | gnomad211exome_AF_popmax < 0.0001
+           | cosmic70count >= 30) %>% #GNOMAD 
+    filter(is.na(ToMMo14K_AF) 
+           | ToMMo14K_AF < 0.0001
+           | cosmic70count >= 30) %>% 
+    filter(is.na(togovar_AF) 
+           | togovar_AF < 0.0001
+           | cosmic70count >= 30) %>% 
+    mutate(Chromosome = as.character(Chromosome))
+  
+  df_filteredout <- df %>% 
+    anti_join(df_SNPfilter) %>% 
+    mutate(Chromosome = as.character(Chromosome))
+  
+  GRanges_filteredout <- GRanges(df_filteredout$Chromosome,
+                                 ranges = IRanges(start = df_filteredout$vcf_pos,
+                                                  end = df_filteredout$vcf_pos),
+                                 names = df_filteredout$Hugo_Symbol)
+  
+  df_filteredout_hotspots <- data.frame(subsetByOverlaps(GRanges_filteredout, GRanges_somatic_sites)) %>% 
+    dplyr::rename(Chromosome = seqnames) %>% 
+    mutate(Chromosome = as.character(Chromosome)) %>% 
+    dplyr::rename(vcf_pos = start) %>% 
+    # dplyr::rename(End_Position = end) %>% 
+    distinct(Chromosome, vcf_pos) %>% 
+    mutate(inhotspot = TRUE)
+  
+  df_rescue <- df_filteredout %>% 
+    left_join(df_filteredout_hotspots, by = c("Chromosome", "vcf_pos")) %>% 
+    filter(inhotspot)
+  
+  df_rescue_simp <- df_rescue %>% 
+    count(Hugo_Symbol, HGVSp_Short, Chromosome, Start_Position, End_Position, Variant_Classification, Reference_Allele, Tumor_Seq_Allele2, vcf_pos)
+
+  df_SNPfilter_withrescue <- rbind(df_SNPfilter, df_rescue %>% select(-inhotspot))
+  
+  return(list(df_SNPfilter_withrescue, 
+              df_rescue,
+              df_filteredout,
+              df_rescue_simp))
+  
+}
+
+
+count_filter <- function(df) {
+  
+  filter_esp <- df %>% filter(esp6500siv2_all >= 0.0001) %>% nrow()
+  filter_1000g <- df %>% filter(`1000g2014oct_all` >= 0.0001) %>% nrow()
+  filter_gnomad <- df %>% filter(gnomad211exome_AF_popmax >= 0.0001) %>% nrow()
+  filter_tommo <- df %>% filter(ToMMo14K_AF >= 0.0001) %>% nrow()
+  filter_togovar <- df %>% filter(togovar_AF >= 0.0001) %>% nrow()
+  
+  cosmic_rescue <- df %>% 
+    filter(esp6500siv2_all >= 0.0001 |
+             `1000g2014oct_all` >= 0.0001 |
+             gnomad211exome_AF_popmax >= 0.0001 |
+             ToMMo14K_AF >= 0.0001 |
+             togovar_AF >= 0.0001
+    ) %>%
+    filter(cosmic70count >= 30)
+  
+  cosmic_rescue_nrow <- nrow(cosmic_rescue)
+  
+  return(list(data.frame(filter = c("esp", "1000g", "gnomad", "tommo", "togovar", "cosmic_rescue"),
+                    mutations = c(filter_esp, filter_1000g, filter_gnomad, filter_tommo, filter_togovar, cosmic_rescue_nrow)),
+              cosmic_rescue))
+}
+
+simp <- function(df) {
+  df_simp <- df %>% 
+    select(-SIFT_score, -SIFT_pred, -Polyphen2_HDIV_score, -Polyphen2_HDIV_pred, Polyphen2_HVAR_score, -Polyphen2_HVAR_pred, -LRT_score, 
+           -LRT_pred, -MutationTaster_score, -MutationTaster_pred, MutationAssessor_score, -MutationAssessor_pred, -FATHMM_score, 
+           -FATHMM_pred, -RadialSVM_score, -RadialSVM_pred, -LR_score, -LR_pred, -VEST3_score, -CADD_raw, -CADD_phred, -`GERP++_RS`, -phyloP46way_placental,
+           -phyloP100way_vertebrate, SiPhy_29way_logOdds, -non_topmed_AF_popmax, -non_neuro_AF_popmax, -non_cancer_AF_popmax, -controls_AF_popmax,
+           -gnomAD_genome_ALL, -gnomAD_genome_AFR, -gnomAD_genome_AMR, -gnomAD_genome_ASJ, -gnomAD_genome_EAS, -gnomAD_genome_FIN, 
+           -gnomAD_genome_NFE, -gnomAD_genome_OTH,
+           -HGNC_ID, -BIOTYPE, -CANONICAL, -CCDS, -ENSP, -SWISSPROT, -TREMBL, -UNIPARC, -RefSeq, -SIFT, -PolyPhen, -EXON, -INTRON, -DOMAINS)
+  return(df_simp)
+}
+```
+
+## 3.1 SNP filtering  
+```{r}
+#remove columns
+df_MSK_withVEPannovar_variant_cos_simp <- simp(df_MSK_withVEPannovar_variant_cos)
+df_DFCI_withVEPannovar_variant_cos_simp <- simp(df_DFCI_withVEPannovar_variant_cos)
+df_DUKE_withVEPannovar_variant_cos_simp <- simp(df_DUKE_withVEPannovar_variant_cos)
+
+#SNP filter and rescue
+df_DFCI_SNPfilter <- SNPfilterandrescue(df_DFCI_withVEPannovar_variant_cos_simp)
+df_MSK_SNPfilter <- SNPfilterandrescue(df_MSK_withVEPannovar_variant_cos_simp)
+df_DUKE_SNPfilter <- SNPfilterandrescue(df_DUKE_withVEPannovar_variant_cos_simp)
+
+#count removed mutations
+print("DFCI")
+count_filter(df_DFCI_withVEPannovar_variant_cos_simp)
+print("MSK")
+count_filter(df_MSK_withVEPannovar_variant_cos_simp)
+print("DUKE")
+count_filter(df_DUKE_withVEPannovar_variant_cos_simp)
+
+#mutations with rescue
+df_DFCI_SNPfilter_withrescue <- df_DFCI_SNPfilter[[1]]
+df_MSK_SNPfilter_withrescue <- df_MSK_SNPfilter[[1]]
+df_DUKE_SNPfilter_withrescue <- df_DUKE_SNPfilter[[1]]
+
+#hotspot rescue
+df_DFCI_SNPfilter[[2]] %>% 
+  write_tsv("result/1_genie/table/1_panel_selection/2_mutation_sheet/4_mutfiltering/hotspot_rescue_DFCI.txt")
+df_MSK_SNPfilter[[2]] %>% 
+  write_tsv("result/1_genie/table/1_panel_selection/2_mutation_sheet/4_mutfiltering/hotspot_rescue_MSK.txt")
+df_DUKE_SNPfilter[[2]] %>% 
+  write_tsv("result/1_genie/table/1_panel_selection/2_mutation_sheet/4_mutfiltering/hotspot_rescue_DUKE.txt")
+
+df_DFCI_SNPfilter[[3]] %>% 
+  write_tsv("result/1_genie/table/1_panel_selection/2_mutation_sheet/4_mutfiltering/filteredout_mutation_DFCI.txt")
+df_MSK_SNPfilter[[3]] %>% 
+  write_tsv("result/1_genie/table/1_panel_selection/2_mutation_sheet/4_mutfiltering/filteredout_mutation_MSK.txt")
+df_DUKE_SNPfilter[[3]] %>% 
+  write_tsv("result/1_genie/table/1_panel_selection/2_mutation_sheet/4_mutfiltering/filteredout_mutation_DUKE.txt")
+
+df_DFCI_SNPfilter[[4]] %>% 
+  write_tsv("result/1_genie/table/1_panel_selection/2_mutation_sheet/4_mutfiltering/hotspot_rescuesimplified_DFCI.txt")
+df_MSK_SNPfilter[[4]] %>% 
+  write_tsv("result/1_genie/table/1_panel_selection/2_mutation_sheet/4_mutfiltering/hotspot_rescuesimplified_MSK.txt")
+df_DUKE_SNPfilter[[4]] %>% 
+  write_tsv("result/1_genie/table/1_panel_selection/2_mutation_sheet/4_mutfiltering/hotspot_rescuesimplified_DUKE.txt")
+```
+
+## 3.2 count
+```{r}
+DFCI_x3 <- df_DFCI_SNPfilter_withrescue %>% nrow()
+MSK_x3 <- df_MSK_SNPfilter_withrescue %>% nrow()
+DUKE_x3 <- df_DUKE_SNPfilter_withrescue %>% nrow()
+
+print("before SNPfilter: MSK, DFCI, DUKE")
+print(paste(MSK_x2, DFCI_x2, DUKE_x2))
+print("after SNPfilter: MSK, DFCI, DUKE")
+print(paste(MSK_x3, DFCI_x3, DUKE_x3))
+print("removed mutation number: MSK, DFCI, DUKE")
+print(paste(MSK_x2 - MSK_x3, DFCI_x2 - DFCI_x3, DUKE_x2 - DUKE_x3))
+```
+
+
+# 4 VAF
+## 4.2 genie VAF
+```{r}
+print("GENIE VAF filter")
+filterVAF <- function(df) {
+  df_VAF <- df %>% 
+    mutate(VAF = t_alt_count/t_depth) %>% 
+    filter(VAF >= 0.05)
+  return(df_VAF)
+}
+
+df_mutations_MSK_VAFcutoff_prevariantfilter <- df_MSK_SNPfilter_withrescue %>% filter(VAF >= 0.05)
+df_mutations_DFCI_VAFcutoff_prevariantfilter <- df_DFCI_SNPfilter_withrescue %>% filter(VAF >= 0.05)
+df_mutations_DUKE_VAFcutoff_prevariantfilter <- df_DUKE_SNPfilter_withrescue %>% filter(VAF >= 0.05)
+
+print("GENIE: VAF cutoff removd mutation number")
+print(df_MSK_SNPfilter_withrescue %>% nrow() - df_mutations_MSK_VAFcutoff_prevariantfilter %>% nrow())
+print(df_DFCI_SNPfilter_withrescue %>% nrow() - df_mutations_DFCI_VAFcutoff_prevariantfilter %>% nrow())
+print(df_DUKE_SNPfilter_withrescue %>% nrow() - df_mutations_DUKE_VAFcutoff_prevariantfilter %>% nrow())
+```
+
+# 5.0 presave: filter out silent mutations
+```{r}
+print("save with silent mutations")
+df_mutations_MSK_VAFcutoff_prevariantfilter %>%
+  write_tsv("result/1_genie/table/1_panel_selection/2_mutation_sheet/4_mutfiltering/MSK_VEPannovar_SNPVAF_withsilent.txt")
+
+df_mutations_MSK_VAFcutoff_prevariantfilter %>% 
+  count(Variant_Classification)
+
+df_mutations_DFCI_VAFcutoff_prevariantfilter %>%  
+  write_tsv("result/1_genie/table/1_panel_selection/2_mutation_sheet/4_mutfiltering/DFCI_VEPannovar_SNPVAF_withsilent.txt")
+
+df_mutations_DFCI_VAFcutoff_prevariantfilter %>% 
+  count(Variant_Classification)
+
+df_mutations_DUKE_VAFcutoff_prevariantfilter %>%
+  write_tsv("result/1_genie/table/1_panel_selection/2_mutation_sheet/4_mutfiltering/DUKE_VEPannovar_SNPVAF_withsilent.txt")
+
+df_mutations_DUKE_VAFcutoff_prevariantfilter %>% 
+  count(Variant_Classification)
+
+print("remove silent mutations")
+df_mutations_MSK_VAFcutoff <- df_mutations_MSK_VAFcutoff_prevariantfilter %>% 
+  filter(Variant_Classification %in% c("Frame_Shift_Del", "Frame_Shift_Ins", "In_Frame_Del", "In_Frame_Ins",
+                                       "Missense_Mutation", "Nonsense_Mutation", 
+                                       "Nonstop_Mutation", "Splice_Site", "Translation_Start_Site"))
+
+df_mutations_DFCI_VAFcutoff <- df_mutations_DFCI_VAFcutoff_prevariantfilter %>% 
+  filter(Variant_Classification %in% c("Frame_Shift_Del", "Frame_Shift_Ins", "In_Frame_Del", "In_Frame_Ins",
+                                       "Missense_Mutation", "Nonsense_Mutation", 
+                                       "Nonstop_Mutation", "Splice_Site", "Translation_Start_Site"))
+
+df_mutations_DUKE_VAFcutoff <- df_mutations_DUKE_VAFcutoff_prevariantfilter %>% 
+  filter(Variant_Classification %in% c("Frame_Shift_Del", "Frame_Shift_Ins", "In_Frame_Del", "In_Frame_Ins",
+                                       "Missense_Mutation", "Nonsense_Mutation", 
+                                       "Nonstop_Mutation", "Splice_Site", "Translation_Start_Site"))
+    
+```
+
+# 6.0 Save
+```{r}
+df_mutations_MSK_VAFcutoff %>%
+  write_tsv("result/1_genie/table/1_panel_selection/2_mutation_sheet/4_mutfiltering/MSK_VEPannovar_SNPVAF.txt")
+df_mutations_DFCI_VAFcutoff %>% 
+  write_tsv("result/1_genie/table/1_panel_selection/2_mutation_sheet/4_mutfiltering/DFCI_VEPannovar_SNPVAF.txt")
+df_mutations_DUKE_VAFcutoff %>%
+  write_tsv("result/1_genie/table/1_panel_selection/2_mutation_sheet/4_mutfiltering/DUKE_VEPannovar_SNPVAF.txt")
+
+df_mutations_MSK_VAFcutoff  %>% nrow()
+df_mutations_DFCI_VAFcutoff %>% nrow()
+df_mutations_DUKE_VAFcutoff %>% nrow()
+```
+
+
+```{r}
+sessionInfo()
+```
+
+
