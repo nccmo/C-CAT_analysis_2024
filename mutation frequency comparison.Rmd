@@ -12,7 +12,6 @@ knitr::opts_chunk$set(echo = TRUE)
 knitr::opts_chunk$set(error = FALSE)
 knitr::opts_chunk$set(message = FALSE)
 knitr::opts_chunk$set(warning = FALSE)
-# Sys.setlocale("LC_ALL", 'Japanese')
 ```
 
 ```{r library}
@@ -81,8 +80,6 @@ df_white_DFCI_mut <- df_mutations_nohyper_white_groups %>%
 df_white_DUKE_mut <- df_mutations_nohyper_white_groups %>% 
   filter(Tumor_Sample_Barcode %in% df_white_DUKE_sample$Tumor_Sample_Barcode)
 
-stopifnot(nrow(df_mutations_nohyper_white_groups) == nrow(df_white_MSK_mut) + nrow(df_white_DFCI_mut) + nrow(df_white_DUKE_mut))
-
 df_asian_MSK_mut <- df_mutations_nohyper_asian_groups %>% 
   filter(Tumor_Sample_Barcode %in% df_asian_MSK_sample$Tumor_Sample_Barcode)
 
@@ -91,8 +88,6 @@ df_asian_DFCI_mut <- df_mutations_nohyper_asian_groups %>%
 
 df_asian_DUKE_mut <- df_mutations_nohyper_asian_groups %>% 
   filter(Tumor_Sample_Barcode %in% df_asian_DUKE_sample$Tumor_Sample_Barcode)
-
-stopifnot(nrow(df_mutations_nohyper_asian_groups) == nrow(df_asian_MSK_mut) + nrow(df_asian_DFCI_mut) + nrow(df_asian_DUKE_mut))
 ```
 
 # 2.0 CCAT mutation frequency
@@ -224,13 +219,6 @@ df_mutfreq_small %>%
 ```{r}
 df_ccat_genie_driversonly_small <- df_mutfreq_small 
 
-df_mutfreq_small %>% 
-  filter(CCAT_total_case <= 100 | White_total_case <= 100)
-# 7 that are CCAT n = 100 for only F1 samples. still satisfies criteria of n > 100 for each cancer type.
-
-nrow(df_ccat_genie_driversonly_small)
-
-# m <- 1
 for (m in seq_len(nrow(df_ccat_genie_driversonly_small))) {
 
 
@@ -291,23 +279,6 @@ for (m in seq_len(nrow(df_ccat_genie_driversonly_small))) {
                   byrow = TRUE)
   df_ccat_genie_driversonly_small$fisher_P_Asian_DFCI_vs_Asian_MSK[m] <- fisher.test(mat_8)$p.value
 
-  # mat_10 <- matrix(unlist(c(df_ccat_genie_driversonly_small[m, "Black_n"],
-  #                           df_ccat_genie_driversonly_small[m, "Black_no_mutation"],
-  #                           df_ccat_genie_driversonly_small[m, "CCAT_n"],
-  #                           df_ccat_genie_driversonly_small[m, "CCAT_no_mutation"])),
-  #                  ncol = 2,
-  #                  byrow = TRUE)
-  # df_ccat_genie_driversonly_small$fisher_P_CCAT_vs_Black_genie[m] <- fisher.test(mat_10)$p.value
- 
-  
-  # mat_11 <- matrix(unlist(c(df_ccat_genie_driversonly_small[m, "White_n"],
-  #                           df_ccat_genie_driversonly_small[m, "White_no_mutation"],
-  #                           df_ccat_genie_driversonly_small[m, "Black_n"],
-  #                           df_ccat_genie_driversonly_small[m, "Black_no_mutation"])),
-  #                  ncol = 2,
-  #                  byrow = TRUE)
-  # df_ccat_genie_driversonly_small$fisher_P_Black_genie_vs_White_genie[m] <- fisher.test(mat_11)$p.value
-
   mat_12 <- matrix(unlist(c(df_ccat_genie_driversonly_small[m, "White_DFCIandDUKE_n"],
                             df_ccat_genie_driversonly_small[m, "White_DFCIandDUKE_no_mutation"],
                             df_ccat_genie_driversonly_small[m, "F1CDx_n"],
@@ -323,14 +294,6 @@ for (m in seq_len(nrow(df_ccat_genie_driversonly_small))) {
                    ncol = 2,
                    byrow = TRUE)
   df_ccat_genie_driversonly_small$fisher_P_CCAT_vs_Asian_genie[m] <- fisher.test(mat_14)$p.value
-  
-  # mat_15 <- matrix(unlist(c(df_ccat_genie_driversonly_small[m, "CCAT_n"],
-  #                           df_ccat_genie_driversonly_small[m, "CCAT_no_mutation"],
-  #                           df_ccat_genie_driversonly_small[m, "Black_n"],
-  #                           df_ccat_genie_driversonly_small[m, "Black_no_mutation"])),
-  #                  ncol = 2,
-  #                  byrow = TRUE)
-  # df_ccat_genie_driversonly_small$fisher_P_CCAT_vs_Black_genie[m] <- fisher.test(mat_15)$p.value
   
   if (df_CCAT_mutfreq[m, "coverage"] == "NCCremoved") {
     next
@@ -406,7 +369,6 @@ df_ccat_genie_driversonly_small <- df_ccat_genie_driversonly_small %>%
   mutate(`min(CCAT_freq & White_freq)` = min(CCAT_freq, White_freq)) %>% 
   mutate(`max(CCAT_freq & White_freq)` = max(CCAT_freq, White_freq))
 
-# NCC nonincluded gene comparisons to NA
 df_ccat_genie_driversonly_small <- df_ccat_genie_driversonly_small %>% 
   mutate(`F1freq - NCCfreq` = ifelse(coverage == "NCCremoved", NA, `F1freq - NCCfreq`)) %>% 
   mutate(`OR(F1/NCC)` = ifelse(coverage == "NCCremoved", NA, `OR(F1/NCC)`)) 
@@ -420,12 +382,6 @@ df_ccat_genie_driversonly_small <- df_ccat_genie_driversonly_small %>%
          `log10(OR)(CCAT/White_genie)`, 
          #F1 NCC
          `OR(F1/NCC)`, `F1freq - NCCfreq`, fisher_P_F1_vs_NCC, fisher_Q_F1_vs_NCC,
-         #DFCI MSK white
-         `OR(White_DFCI/White_MSK)`, `White_DFCIfreq - White_MSKfreq`, fisher_P_White_DFCI_vs_White_MSK, fisher_Q_White_DFCI_vs_White_MSK,
-         #DFCI MSK asian
-         `OR(Asian_DFCI/Asian_MSK)`, `Asian_DFCIfreq - Asian_MSKfreq`, fisher_P_Asian_DFCI_vs_Asian_MSK, fisher_Q_Asian_DFCI_vs_Asian_MSK,
-         #CCAT Asian
-         `OR(CCAT/Asian_genie)`, `CCAT_freq - Asian_geniefreq`, fisher_P_CCAT_vs_Asian_genie, fisher_Q_CCAT_vs_Asian_genie,
          everything())
 
 df_ccat_genie_driversonly_small %>%
@@ -456,12 +412,8 @@ df_forfig <- df_ccat_genie_driversonly_small %>%
 
 ## 5.2 CCAT vs White
 ```{r}
-### C-CAT vs White (GENIE) --------------
-
 pdf(str_glue("result/2_ccat/pdf/4_analysis/4_1_mutation_freq/4_mutfreq/CCATvsWhite/final/mutfreq_sigdiff_CCATvsWhite.pdf"), 
            width = 4, height = 5)
-
-df_sigdiff_combos
 
 colors <- scale_fill_manual(values = c("C-CAT" = "#E73934",
                                        "GENIE(White)" = "#4D8BC0"))
