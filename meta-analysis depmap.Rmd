@@ -83,7 +83,7 @@ m <- metamean(allwt_cases, mean_allwt, sd_allwt,
              data = df_3groups_all)
 
 forest(m, layout = "JAMA", xlim = c(-0.8,0.8), at = c(-0.8, -0.6, -0.4, -0.2, 0, 0.2, 0.4, 0.6, 0.8))
-grid::grid.text(paste("3 groups wt change: all genes", sep = ""), .5, .85, gp = grid::gpar(cex = 2))
+grid::grid.text(paste("3 groups wt change", sep = ""), .5, .85, gp = grid::gpar(cex = 2))
 dev.off()
 ```
 
@@ -101,7 +101,7 @@ m <- metacont(KOdriver_mt_cases, mean_KOdriver_mt, sd_KOdriver_mt,
               data = df_3groups_all,
               sm = "MD")
 forest(m, layout = "JAMA", xlim = c(-0.8,0.8), at = c(-0.8, -0.6, -0.4, -0.2, 0, 0.2, 0.4, 0.6, 0.8))
-grid::grid.text(paste("3 groups KOgene mt vs wt: all genes", sep = ""), .5, .85, gp = grid::gpar(cex = 2))
+grid::grid.text(paste("3 groups KOgene mt vs wt", sep = ""), .5, .85, gp = grid::gpar(cex = 2))
 
 dev.off()
 ```
@@ -121,7 +121,7 @@ m <- metacont(otherdriver_mt_cases, mean_otherdriver_mt, sd_otherdriver_mt,
               sm = "MD")
 forest(m, layout = "JAMA", xlim = c(-0.8,0.8), at = c(-0.8, -0.6, -0.4, -0.2, 0, 0.2, 0.4, 0.6, 0.8))
 
-grid::grid.text(paste("3 groups otherdriver mt vs wt: all genes", sep = ""), .5, .85, gp = grid::gpar(cex = 2))
+grid::grid.text(paste("3 groups otherdriver mt vs wt", sep = ""), .5, .85, gp = grid::gpar(cex = 2))
 dev.off()
 ```
 
