@@ -6,14 +6,12 @@ output: html_document
 editor_options: 
   chunk_output_type: console
 ---
-NCC removed all genes
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 knitr::opts_chunk$set(error = FALSE)
 knitr::opts_chunk$set(message = FALSE)
 knitr::opts_chunk$set(warning = FALSE)
-Sys.setlocale("LC_ALL", 'Japanese')
 ```
 
 ```{r library}
