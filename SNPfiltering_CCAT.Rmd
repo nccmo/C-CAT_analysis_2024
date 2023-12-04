@@ -236,7 +236,6 @@ GRanges_somatic_sites <- GRanges(seqnames = known_somatic_sites$Chr,
 
 ## 2.2 COSMIC data 
 ```{r}
-df <- df_mutations_F1CDx_withVEPannovar_variant
 make_cosmic <- function(df){
   df_cos <- df %>%
     mutate(cosmic70list = cosmic70 %>%
@@ -406,7 +405,6 @@ print("removed mutation number: F1, NCC")
 print(paste(F1_x2 - F1_x3, NCC_x2 - NCC_x3))
 ```
 
-
 # 4 VAF
 ## 4.1 ccat VAF
 ```{r}
@@ -429,15 +427,8 @@ df_mutations_NCC_VAFcutoff_prevariantfilter %>% nrow()
 
 # 5.0 presave: filter out silent mutations
 ```{r}
-print("save with silent mutations")
-df_mutations_F1CDx_VAFcutoff_prevariantfilter %>% 
-  write_tsv("result/2_ccat/table/1_panel_selection/2_mutation_sheet/4_mutfiltering/F1CDx_VEPannovar_SNPVAF_withsilent.txt")
-
 df_mutations_F1CDx_VAFcutoff_prevariantfilter %>% 
   count(Variant_Classification)
-
-df_mutations_NCC_VAFcutoff_prevariantfilter %>% 
-  write_tsv("result/2_ccat/table/1_panel_selection/2_mutation_sheet/4_mutfiltering/NCC_VEPannovar_SNPVAF_withsilent.txt")
 
 df_mutations_NCC_VAFcutoff_prevariantfilter %>% 
   count(Variant_Classification)
@@ -452,7 +443,6 @@ df_mutations_NCC_VAFcutoff <- df_mutations_NCC_VAFcutoff_prevariantfilter %>%
   filter(Variant_Classification %in% c("Frame_Shift_Del", "Frame_Shift_Ins", "In_Frame_Del", "In_Frame_Ins",
                                        "Missense_Mutation", "Nonsense_Mutation", 
                                        "Nonstop_Mutation", "Splice_Site", "Translation_Start_Site"))
-    
 ```
 
 # 6.0 Save
@@ -462,8 +452,8 @@ df_mutations_F1CDx_VAFcutoff %>%
 df_mutations_NCC_VAFcutoff %>% 
     write_tsv("result/2_ccat/table/1_panel_selection/2_mutation_sheet/4_mutfiltering/NCC_VEPannovar_SNPVAF.txt")
 
-df_mutations_F1CDx_VAFcutoff %>% nrow()
-df_mutations_NCC_VAFcutoff %>% nrow()
+nrow(df_mutations_F1CDx_VAFcutoff)
+nrow(df_mutations_NCC_VAFcutoff)
 ```
 
 ```{r}
